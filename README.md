@@ -22,6 +22,7 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - La vista previa segura del correo muestra período, destinatarios y cifras exactas antes de enviar; abrirla nunca envía mensajes.
 - El correo trimestral usa una plantilla corporativa con asunto de acción requerida, resumen ejecutivo, instrucciones, indicadores, detalle priorizado y accesos al portal, al reporte y al repositorio.
 - La vista previa puede abrirse en una ventana completa y el envío queda visualmente bloqueado cuando no existen destinatarios configurados.
+- El tablero distingue explícitamente entre **registros** y **personas únicas**. Las tablas agrupadas muestran su suma de comprobación y cada persona abre sus registros exactos en la revisión detallada.
 
 ## Instalación
 
