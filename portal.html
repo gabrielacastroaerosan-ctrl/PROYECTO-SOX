@@ -101,7 +101,7 @@
         var tipo=document.getElementById('tipoFiltro').value,periodo=document.getElementById('periodoFiltro').value;
         var casos=portalData.casos.filter(function(c){var esCons=String(c.resultado).indexOf('duplicidad')!==-1;return(!tipo||(tipo==='con')===esCons)&&(!periodo||(c.periodo||'Período actual')===periodo)});
         var cont=document.getElementById('cont');
-        var html='<div class="notice">Revisa únicamente los casos asignados a ti. Adjunta el enlace del correo o aprobación del director; la evidencia quedará trazable para la auditoría.</div>';
+        var html='<div class="notice">Aquí ves únicamente los registros relacionados contigo. Adjunta el enlace del correo o la aprobación del director; la evidencia quedará guardada para el seguimiento SOX.</div>';
         if(!casos.length){cont.innerHTML=html+'<div class="empty">No hay casos para estos filtros.</div>';return;}
         casos.forEach(function(c,i){
           var esCons = String(c.resultado).indexOf('duplicidad')!==-1;

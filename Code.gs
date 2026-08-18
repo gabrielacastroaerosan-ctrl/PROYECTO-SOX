@@ -505,21 +505,23 @@ function prepararHojaPermisos() {
 }
 
 /* ========================= 4. ORQUESTADOR =============================== */
-function iniciarLoteSOX() {
+function iniciarLoteSOX(periodo) {
   var panel = obtenerPanel_();
+  var p = String(periodo || '').trim();
+  if (!rangoPeriodo_(p)) throw new Error('Selecciona explícitamente un período con formato Qn AAAA.');
   prepararHojaPermisos();
   prepararHojaJustificados_(panel);
-  limpiarResumen_(panel);
+  prepararResumenPeriodo_(panel, p);
   limpiarCorreos_(panel);
-  var carpeta = obtenerCarpetaDestino_();
-  return { ok: true, carpetaUrl: carpeta ? carpeta.getUrl() : '', panelUrl: panel.getUrl() };
+  var carpeta = obtenerSubcarpeta_(obtenerCarpetaDestino_(), p);
+  return { ok: true, periodo: p, carpetaUrl: carpeta.getUrl(), panelUrl: panel.getUrl() };
 }
 
 // Consolida al final: genera las 2 tablas y deja un único borrador general.
-function finalizarLoteSOX() {
+function finalizarLoteSOX(periodo) {
   var panel = obtenerPanel_();
   construirReporteFinal_(panel);
-  var correos = construirCorreos_(panel);
+  var correos = construirCorreos_(panel, periodo);
   var resumen = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN);
   var pendientes = resumen ? Math.max(0, resumen.getLastRow() - 1) : 0;
   registrarEjecucion_(panel, pendientes, correos);
@@ -622,18 +624,22 @@ function procesarArchivoIndividualSOX(datos) {
     var dicc = cargarDiccionario_(panel);
     var justificados = cargarJustificados_(panel);
 
-    var resultados = [], total = 0, subUrl = carpetaBase.getUrl();
+    var periodoElegido = String(datos.periodo || '').trim();
+    if (!rangoPeriodo_(periodoElegido)) throw new Error('No se recibió un período válido para esta carga.');
+    var resultados = [], total = 0, reemplazados = 0, subUrl = carpetaBase.getUrl();
     for (var i = 0; i < blobs.length; i++) {
-      var periodo = detectarPeriodo_(blobs[i].getName());
+      var periodo = periodoElegido;
       var sub = obtenerSubcarpeta_(carpetaBase, periodo);
       subUrl = sub.getUrl();
       var r = procesarUnArchivo_(blobs[i], sub, permisos, dicc, periodo, panel, justificados);
       resultados.push(r.info);
       agregarResumen_(panel, r.resumen);
       total += r.resumen.length;
+      reemplazados += r.info.reemplazados || 0;
     }
     return {
       ok: true, archivos: resultados, inconsistencias: total,
+      periodo: periodoElegido, reemplazados: reemplazados,
       carpetaUrl: subUrl, panelUrl: panel.getUrl(),
       segundos: Math.round((Date.now() - t0) / 100) / 10
     };
@@ -649,7 +655,7 @@ function procesarUnArchivo_(blob, carpeta, permisos, dicc, periodo, panel, justi
   var nombre = blob.getName();
   var base = quitarExtension_(nombre);
   var ext = obtenerExtension_(nombre);
-  if (CONFIG.REEMPLAZAR_EXISTENTES) trashExistentes_(base, carpeta);
+  var reemplazados = CONFIG.REEMPLAZAR_EXISTENTES ? trashExistentes_(base, carpeta) : 0;
 
   var ss, matriz;
   if (ext === 'csv') {
@@ -673,6 +679,7 @@ function procesarUnArchivo_(blob, carpeta, permisos, dicc, periodo, panel, justi
   return {
     info: {
       nombre: base, tipo: tipo.hoja, periodo: periodo, url: ss.getUrl(),
+      reemplazados: reemplazados,
       filas: matriz.length - 1, columnas: matriz[0].length,
       noCumple: stats.noCumple, conNull: stats.conNull,
       segundos: Math.round((Date.now() - t0) / 100) / 10
@@ -693,8 +700,9 @@ function crearSheetEnCarpeta_(nombreBase, carpeta) {
   return ss;
 }
 function trashExistentes_(nombreBase, carpeta) {
-  var it = carpeta.getFilesByName(nombreBase);
-  while (it.hasNext()) it.next().setTrashed(true);
+  var it = carpeta.getFilesByName(nombreBase), n = 0;
+  while (it.hasNext()) { it.next().setTrashed(true); n++; }
+  return n;
 }
 // Copia Permisos + diccionario postas desde el panel a cada Excel generado.
 function copiarHojasApoyo_(panel, ss) {
@@ -949,6 +957,18 @@ function limpiarResumen_(panel) {
   hoja.setFrozenRows(1);
   return hoja;
 }
+// Al reprocesar un trimestre se reemplaza únicamente su consolidado. Los demás
+// períodos permanecen disponibles para consulta histórica en la app.
+function prepararResumenPeriodo_(panel, periodo) {
+  var anterior = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN), conservar = [];
+  if (anterior && anterior.getLastRow() > 1) {
+    conservar = anterior.getRange(2, 1, anterior.getLastRow() - 1, Math.max(13, anterior.getLastColumn())).getValues()
+      .filter(function (r) { return String(r[12] || '').trim() !== String(periodo); });
+  }
+  var hoja = limpiarResumen_(panel);
+  if (conservar.length) hoja.getRange(2, 1, conservar.length, conservar[0].length).setValues(conservar);
+  return hoja;
+}
 function agregarResumen_(panel, filas) {
   if (!filas || filas.length === 0) return;
   var lock = LockService.getScriptLock();
@@ -977,6 +997,21 @@ function detectarPeriodo_(nombre) {
 function obtenerSubcarpeta_(carpetaBase, periodo) {
   var it = carpetaBase.getFoldersByName(periodo);
   return it.hasNext() ? it.next() : carpetaBase.createFolder(periodo);
+}
+
+// Explica el destino antes de cargar. No crea carpetas durante la consulta.
+function obtenerDestinoPeriodoSOX(periodo) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
+  var p = String(periodo || '').trim();
+  if (!rangoPeriodo_(p)) return { ok: false, mensaje: 'Selecciona un período válido.' };
+  var base = obtenerCarpetaDestino_(), it = base.getFoldersByName(p);
+  if (it.hasNext()) {
+    var existente = it.next();
+    return { ok: true, periodo: p, existe: true, carpetaUrl: existente.getUrl(),
+      mensaje: 'Se guardará en la carpeta existente "' + p + '".' };
+  }
+  return { ok: true, periodo: p, existe: false, carpetaUrl: base.getUrl(),
+    mensaje: 'Se creará automáticamente la carpeta "' + p + '" dentro del repositorio SOX.' };
 }
 
 /* ======================== 11. UTILIDADES ============================== */
@@ -1067,15 +1102,15 @@ function limpiarCorreos_(panel) {
 }
 // Mantiene la hoja histórica de apoyo, pero ahora genera una sola comunicación
 // general. La segmentación individual se resuelve dentro del portal.
-function construirCorreos_(panel) {
+function construirCorreos_(panel, periodo) {
   var resumen = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN);
   var hojaC = limpiarCorreos_(panel);
   if (!resumen || resumen.getLastRow() < 2) return 0;
-  var total = resumen.getLastRow() - 1, periodo = periodoOperativoActual_();
+  var total = resumen.getLastRow() - 1, p = String(periodo || periodoOperativoActual_());
   var para = destinatariosReporte_().join(', ');
   hojaC.getRange(2, 1, 1, 4).setValues([[
     para || '(configurar DESTINATARIOS_REPORTE)',
-    'Control SOX de Tarifas - Resultados ' + periodo + ' y solicitud de evidencias',
+    'Control SOX de Tarifas - Resultados ' + p + ' y solicitud de evidencias',
     'Único correo general del período. Adjunta el reporte consolidado y dirige a cada usuario al portal para consultar sus propios registros.',
     total
   ]]);

@@ -30,9 +30,9 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 ## Operación esperada
 
 1. Actualizar la matriz de aprobadores hasta el último mes cerrado.
-2. Procesar los archivos del trimestre desde **Procesar archivos**.
-3. Revisar las dos tablas críticas en **Resumen ejecutivo**.
-4. Filtrar o inspeccionar registros en **Hallazgos**.
+2. Seleccionar explícitamente el trimestre en **Procesar período** y cargar el paquete completo; el nombre del archivo ya no decide la carpeta.
+3. Revisar las dos tablas críticas en **Inicio y flujo**.
+4. Filtrar o inspeccionar registros en **Revisar resultados**.
 5. Consultar los archivos procesados en **Repositorio Drive**.
 6. Generar o actualizar el **reporte para envío** desde **Comunicaciones** y revisarlo en Google Sheets o Excel.
 7. Previsualizar y enviar una sola vez el **correo general trimestral**; incluye el enlace al reporte, el portal individual y el `.xlsx` adjunto cuando su tamaño lo permite.
@@ -42,6 +42,13 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 
 - **Soporte técnico interno:** cada archivo procesado conserva su propia hoja `Análisis`; el panel maestro mantiene datos incompletos y trazabilidad para investigación.
 - **Entregable para jefatura y equipos:** un solo libro trimestral, filtrable, sin hojas individuales. Los casos sin un correo de aprobador válido se excluyen de la distribución y permanecen en el análisis interno.
+
+## Regla de almacenamiento y reproceso
+
+- La carpeta se determina por el trimestre seleccionado (`Q1 AAAA` a `Q4 AAAA`). Si ya existe, se reutiliza; de lo contrario, la app la crea dentro del repositorio SOX.
+- Al reprocesar, se reemplaza el consolidado de ese trimestre y se conservan los demás períodos históricos.
+- Dentro de la carpeta trimestral, un archivo nuevo con el mismo nombre reemplaza la versión anterior, que se envía a la papelera. Los archivos con nombres diferentes se conservan.
+- Por esta razón debe cargarse el paquete completo del trimestre en una misma ejecución.
 
 ## Nota de compatibilidad
 
