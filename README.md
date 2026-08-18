@@ -15,6 +15,7 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Portal de usuario con resumen, filtros y captura de nota o evidencia.
 - Flujo guiado de cinco pasos que indica la siguiente acción del período.
 - Indicador de conexión con animación y segundos transcurridos mientras se consultan Sheets y Drive.
+- Carga inicial liviana: los KPIs se calculan sobre todo el trimestre, pero la lista descarga solo una primera página; búsquedas y filtros consultan el período completo en el servidor con una pausa breve para evitar llamadas repetidas.
 - Explorador de solo lectura para consultar las carpetas y archivos del repositorio SOX en Drive desde la app.
 - Se conserva la actualización del Google Sheet maestro y la organización de archivos en Drive.
 

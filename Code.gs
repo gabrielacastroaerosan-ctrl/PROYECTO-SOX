@@ -18,7 +18,7 @@
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
-  APP_VERSION: '2026.08.18.3',
+  APP_VERSION: '2026.08.18.4',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -361,7 +361,7 @@ function correoGeneralTrimestralHTML_(periodo, resumen, reporteUrl, portalUrl, c
 function previewCorreoGeneralTrimestral(periodo) {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
   var p = String(periodo || periodoOperativoActual_());
-  var d = obtenerDashboardSOX(p);
+  var d = obtenerDashboardSOX(p, 1000000);
   if (!d.ok) return d;
   var resumen = resumenPeriodoCorreo_(d, p), destinatarios = destinatariosReporte_();
   var reporte = obtenerReporteEnvioExistente_(p);
@@ -1218,7 +1218,7 @@ function claveCaso_(email, rateId) {
 }
 
 // Fuente única para el dashboard administrativo. Lee las hojas existentes; no duplica datos.
-function obtenerDashboardSOX(periodoFiltro) {
+function obtenerDashboardSOX(periodoFiltro, limiteCasos) {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo los administradores SOX pueden ver este tablero.' };
 
   var panel = obtenerPanel_();
@@ -1235,7 +1235,8 @@ function obtenerDashboardSOX(periodoFiltro) {
     });
   }
 
-  var casos = [], noAut = {}, consistencia = {}, personas = {}, tipos = {}, zonas = {}, periodos = {};
+  var casos = [], totalCasosPeriodo = 0, maxCasos = limiteCasos == null ? 300 : Math.max(1, Number(limiteCasos) || 300);
+  var noAut = {}, consistencia = {}, personas = {}, tipos = {}, zonas = {}, periodos = {};
   var metricas = { total: 0, paraEnvio: 0, datosIncompletos: 0, noAutorizados: 0, autoAprobaciones: 0, conEvidencia: 0, porRevisar: 0, aprobados: 0 };
 
   if (resumen && resumen.getLastRow() > 1) {
@@ -1271,7 +1272,8 @@ function obtenerDashboardSOX(periodoFiltro) {
         resultado: resultado, categoria: categoria, camposNull: r[11], periodo: periodo,
         estado: estado, evidencia: evidencia, justificador: justificador
       };
-      casos.push(caso);
+      totalCasosPeriodo++;
+      if (casos.length < maxCasos) casos.push(caso);
       metricas.total++;
       if (categoria === 'Aprobador no autorizado') metricas.noAutorizados++;
       if (categoria === 'Autoaprobación') metricas.autoAprobaciones++;
@@ -1335,8 +1337,25 @@ function obtenerDashboardSOX(periodoFiltro) {
     noAutorizados: tabla(noAut),
     consistencia: tabla(consistencia),
     casos: casos,
+    totalCasosPeriodo: totalCasosPeriodo,
+    casosLimitados: totalCasosPeriodo > casos.length,
     recordatorioActivo: ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'enviarRecordatorioMatriz'; })
   };
+}
+
+// Búsqueda paginada para que la Web App no descargue miles de objetos al abrir.
+// Las métricas siguen calculándose sobre todo el período; la lista devuelve como
+// máximo 250 coincidencias y conserva el total real encontrado.
+function buscarCasosDashboardSOX(periodo, filtros) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.', casos: [], total: 0 };
+  var f = filtros || {}, d = obtenerDashboardSOX(periodo, 1000000);
+  if (!d.ok) return d;
+  var q = String(f.texto || '').trim().toLowerCase(), tipo = String(f.tipo || ''), zona = String(f.zona || ''), riesgo = String(f.riesgo || '');
+  var encontrados = d.casos.filter(function (c) {
+    var texto = [c.rateId, c.aprobador, c.solicitante, c.origen, c.destino, c.region, c.zona].join(' ').toLowerCase();
+    return (!q || texto.indexOf(q) !== -1) && (!tipo || c.tipo === tipo) && (!zona || c.zona === zona) && (!riesgo || c.categoria === riesgo);
+  });
+  return { ok: true, periodo: d.periodoActivo, total: encontrados.length, limite: 250, casos: encontrados.slice(0, 250) };
 }
 
 // Permite al administrador cerrar el ciclo de una evidencia sin editar el Sheet manualmente.
