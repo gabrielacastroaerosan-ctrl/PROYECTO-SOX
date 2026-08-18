@@ -18,6 +18,8 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Carga inicial liviana: los KPIs se calculan sobre todo el trimestre, pero la lista descarga solo una primera página; búsquedas y filtros consultan el período completo en el servidor con una pausa breve para evitar llamadas repetidas.
 - Explorador de solo lectura para consultar las carpetas y archivos del repositorio SOX en Drive desde la app.
 - Se conserva la actualización del Google Sheet maestro y la organización de archivos en Drive.
+- El botón **Cómo se calcula** explica en la app el alcance y la fórmula de cada estadística del trimestre seleccionado.
+- La vista previa segura del correo muestra período, destinatarios y cifras exactas antes de enviar; abrirla nunca envía mensajes.
 
 ## Instalación
 
@@ -48,9 +50,11 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 ## Regla de almacenamiento y reproceso
 
 - La carpeta se determina por el trimestre seleccionado (`Q1 AAAA` a `Q4 AAAA`). Si ya existe, se reutiliza; de lo contrario, la app la crea dentro del repositorio SOX.
+- El selector muestra siempre los cuatro trimestres de cada año. Los períodos futuros permanecen visibles pero deshabilitados hasta que comiencen.
 - Al reprocesar, se reemplaza el consolidado de ese trimestre y se conservan los demás períodos históricos.
 - Dentro de la carpeta trimestral, un archivo nuevo con el mismo nombre reemplaza la versión anterior, que se envía a la papelera. Los archivos con nombres diferentes se conservan.
 - Por esta razón debe cargarse el paquete completo del trimestre en una misma ejecución.
+- La app no reconstruye automáticamente períodos anteriores: si se empieza a operar en `Q3`, el historial inicia en `Q3` salvo que se carguen manualmente los paquetes completos de `Q1` y `Q2`.
 
 ## Reinicio para pruebas
 
