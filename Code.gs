@@ -71,6 +71,9 @@ var CONFIG = {
   HOJA_REPORTE: 'Reporte Final',
   HOJA_HISTORIAL: 'Historial de ejecuciones',
   HOJA_HISTORIAL_COMUNICACIONES: 'Historial comunicaciones',
+  HOJA_REPORTE_ENVIO_RESUMEN: 'Resumen ejecutivo',
+  HOJA_REPORTE_ENVIO_DETALLE: 'Detalle consolidado',
+  PREFIJO_REPORTE_ENVIO: 'Reporte SOX para envío - ',
 
   // Recordatorio mensual de matriz (día 15, último mes cerrado).
   RESPONSABLE_SOX: 'gabrielacastro.aerosan@latam.com',
@@ -260,11 +263,17 @@ function destinatariosReporte_() {
 }
 
 function resumenPeriodoCorreo_(dashboard, periodo) {
-  var casos = (dashboard.casos || []).filter(function (c) { return !periodo || c.periodo === periodo || c.periodo === 'Período actual'; });
+  var casos = (dashboard.casos || []).filter(function (c) {
+    if (periodo && c.periodo !== periodo && c.periodo !== 'Período actual') return false;
+    var ap = String(c.aprobador || '').trim(), sol = String(c.solicitante || '').trim();
+    if (!ap || ap.indexOf('@') === -1) return false;
+    if (c.categoria === 'Aprobador no autorizado') return true;
+    return c.categoria === 'Autoaprobación' && !!sol && sol.indexOf('@') !== -1 && ap.toLowerCase() === sol.toLowerCase();
+  });
   var noAut = {}, auto = {};
   casos.forEach(function (c) {
     var mapa = c.categoria === 'Aprobador no autorizado' ? noAut : auto;
-    var persona = c.aprobador || '(sin aprobador)';
+    var persona = c.aprobador;
     mapa[persona] = (mapa[persona] || 0) + 1;
   });
   function top(m) { return Object.keys(m).map(function (k) { return { persona: k, registros: m[k] }; })
@@ -283,7 +292,7 @@ function escapeHtml_(v) {
   });
 }
 
-function correoGeneralTrimestralHTML_(periodo, resumen, panelUrl, portalUrl, carpetaUrl) {
+function correoGeneralTrimestralHTML_(periodo, resumen, reporteUrl, portalUrl, carpetaUrl) {
   function filas(items) {
     if (!items.length) return '<tr><td colspan="2" style="padding:10px;color:#16864b">Sin registros</td></tr>';
     return items.map(function (x) { return '<tr><td style="padding:8px;border-bottom:1px solid #eee">' + escapeHtml_(x.persona) +
@@ -301,7 +310,9 @@ function correoGeneralTrimestralHTML_(periodo, resumen, panelUrl, portalUrl, car
     '<h3 style="color:#0f004f;font-size:14px">1. Aprobadores no autorizados</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topNoAutorizados) + '</table>' +
     '<h3 style="color:#0f004f;font-size:14px;margin-top:20px">2. Prueba de consistencia</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topAutoAprobaciones) + '</table>' +
     '<div style="margin-top:24px"><a href="' + escapeHtml_(portalUrl) + '" style="display:inline-block;background:#ed1650;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Consultar mis registros</a></div>' +
-    '<p style="font-size:12px;line-height:1.7;color:#666;margin-top:20px">Sábana consolidada: <a href="' + escapeHtml_(panelUrl) + '">abrir Sheet</a><br>Repositorio de evidencias: <a href="' + escapeHtml_(carpetaUrl) + '">abrir Drive</a></p>' +
+    '<p style="font-size:12px;line-height:1.7;color:#666;margin-top:20px">Reporte trimestral consolidado: ' +
+    (reporteUrl ? '<a href="' + escapeHtml_(reporteUrl) + '">abrir Sheet</a>' : '<b>pendiente de generar</b>') +
+    '<br>Repositorio de evidencias: <a href="' + escapeHtml_(carpetaUrl) + '">abrir Drive</a></p>' +
     '<p style="font-size:12px;color:#666">Las justificaciones deben incluir la cadena de correos y, cuando corresponda, la aprobación de un jefe o director.</p></div></div></div>';
 }
 
@@ -311,10 +322,12 @@ function previewCorreoGeneralTrimestral(periodo) {
   var d = obtenerDashboardSOX();
   if (!d.ok) return d;
   var resumen = resumenPeriodoCorreo_(d, p), destinatarios = destinatariosReporte_();
+  var reporte = obtenerReporteEnvioExistente_(p);
   var portalUrl = urlApp_() + '?view=portal';
   var asunto = 'Control SOX de Tarifas - Resultados ' + p + ' y solicitud de evidencias';
   return { ok: true, periodo: p, asunto: asunto, destinatarios: destinatarios, resumen: resumen,
-    html: correoGeneralTrimestralHTML_(p, resumen, d.panelUrl, portalUrl, d.carpetaUrl) };
+    reporteGenerado: !!reporte, reporteUrl: reporte ? reporte.getUrl() : '',
+    html: correoGeneralTrimestralHTML_(p, resumen, reporte ? reporte.getUrl() : '', portalUrl, d.carpetaUrl) };
 }
 
 function prepararHistorialComunicaciones_(panel) {
@@ -342,15 +355,23 @@ function enviarCorreoGeneralTrimestral(periodo) {
       var repetido = anteriores.some(function (r) { return r[0] === 'Correo general trimestral' && r[1] === prev.periodo; });
       if (repetido) return { ok: false, mensaje: 'El correo general de ' + prev.periodo + ' ya fue enviado. No se realizó un segundo envío.' };
     }
-    MailApp.sendEmail({
+    var reporte = generarReporteEnvioTrimestral_(prev.periodo);
+    var adjunto = exportarSpreadsheetBlob_(reporte.spreadsheet, 'Reporte_SOX_' + prev.periodo.replace(/\s+/g, '_') + '.xlsx');
+    var html = correoGeneralTrimestralHTML_(prev.periodo, prev.resumen, reporte.url, urlApp_() + '?view=portal', obtenerCarpetaDestino_().getUrl());
+    var opcionesCorreo = {
       to: prev.destinatarios.join(','), subject: prev.asunto,
       body: 'Resultados del control SOX ' + prev.periodo + '. Consulte el portal para revisar los registros asociados a su cuenta.',
-      htmlBody: prev.html
-    });
+      htmlBody: html
+    };
+    // Se deja margen frente al límite de adjuntos de Gmail. Si el libro supera
+    // 20 MB, el correo conserva el enlace al mismo reporte sin adjuntarlo.
+    if (adjunto.getBytes().length <= 20 * 1024 * 1024) opcionesCorreo.attachments = [adjunto];
+    MailApp.sendEmail(opcionesCorreo);
     historial.appendRow([
       new Date(), 'Correo general trimestral', prev.periodo, prev.destinatarios.join(', '), prev.asunto, prev.resumen.total
     ]);
-    return { ok: true, enviados: 1, destinatarios: prev.destinatarios.length, periodo: prev.periodo };
+    return { ok: true, enviados: 1, destinatarios: prev.destinatarios.length, periodo: prev.periodo,
+      reporteUrl: reporte.url, registros: reporte.registros };
   } catch (e) { return { ok: false, mensaje: 'No se pudo enviar el correo general: ' + e.message }; }
   finally { try { lock.releaseLock(); } catch (_) {} }
 }
@@ -494,7 +515,7 @@ function iniciarLoteSOX() {
   return { ok: true, carpetaUrl: carpeta ? carpeta.getUrl() : '', panelUrl: panel.getUrl() };
 }
 
-// Consolida al final: genera reporte final (2 tablas) y borradores de correo.
+// Consolida al final: genera las 2 tablas y deja un único borrador general.
 function finalizarLoteSOX() {
   var panel = obtenerPanel_();
   construirReporteFinal_(panel);
@@ -1039,41 +1060,26 @@ function parseFecha_(valor) {
 function limpiarCorreos_(panel) {
   var hoja = hojaPorNombre_(panel, CONFIG.HOJA_CORREOS) || panel.insertSheet(CONFIG.HOJA_CORREOS);
   hoja.clear();
-  hoja.getRange(1, 1, 1, 4).setValues([['Para (aprobador)', 'Asunto', 'Cuerpo del correo', '# casos']])
+  hoja.getRange(1, 1, 1, 4).setValues([['Destinatarios generales', 'Asunto', 'Cuerpo del correo', '# registros']])
     .setFontWeight('bold').setBackground('#990000').setFontColor('#ffffff');
   hoja.setFrozenRows(1);
   return hoja;
 }
-// Construye un borrador de correo por cada aprobador con casos PENDIENTES (desde el Resumen).
+// Mantiene la hoja histórica de apoyo, pero ahora genera una sola comunicación
+// general. La segmentación individual se resuelve dentro del portal.
 function construirCorreos_(panel) {
   var resumen = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN);
   var hojaC = limpiarCorreos_(panel);
   if (!resumen || resumen.getLastRow() < 2) return 0;
-
-  var datos = resumen.getRange(2, 1, resumen.getLastRow() - 1, resumen.getLastColumn()).getValues();
-  // Índices del Resumen: 0 Tipo,1 RateId,2 Región,3 Origen,4 Zona,5 Destino,6 Solic,7 RolSolic,8 Aprob,9 RolAprob,10 Resultado,11 NULL
-  var porAprob = {};
-  datos.forEach(function (r) {
-    var ap = String(r[8]).trim(); if (!ap || ap === 'NULL') ap = '(sin aprobador)';
-    (porAprob[ap] = porAprob[ap] || []).push(r);
-  });
-
-  var filas = [];
-  Object.keys(porAprob).forEach(function (ap) {
-    var casos = porAprob[ap];
-    var lineas = casos.slice(0, 30).map(function (r) {
-      return '• [' + r[0] + '] Rate Id ' + r[1] + ' | ' + r[3] + '→' + r[5] + ' | ' + r[10];
-    }).join('\n');
-    var extra = casos.length > 30 ? ('\n… y ' + (casos.length - 30) + ' caso(s) más (ver "Resumen SOX").') : '';
-    var cuerpo = 'Hola,\n\nEn la revisión SOX de tarifas del trimestre se identificaron ' + casos.length +
-      ' caso(s) donde apareces como aprobador y requieren justificación o evidencia (captura o correo de aprobación del director):\n\n' +
-      lineas + extra +
-      '\n\nPor favor responder con la evidencia correspondiente.\n\nGracias,\nControl SOX de Tarifas';
-    filas.push([ap, 'Revisión SOX de tarifas — solicitud de evidencia (' + casos.length + ' caso(s))', cuerpo, casos.length]);
-  });
-
-  if (filas.length > 0) hojaC.getRange(2, 1, filas.length, 4).setValues(filas);
-  return filas.length;
+  var total = resumen.getLastRow() - 1, periodo = periodoOperativoActual_();
+  var para = destinatariosReporte_().join(', ');
+  hojaC.getRange(2, 1, 1, 4).setValues([[
+    para || '(configurar DESTINATARIOS_REPORTE)',
+    'Control SOX de Tarifas - Resultados ' + periodo + ' y solicitud de evidencias',
+    'Único correo general del período. Adjunta el reporte consolidado y dirige a cada usuario al portal para consultar sus propios registros.',
+    total
+  ]]);
+  return 1;
 }
 
 function buscarColumna_(headers, alias) {
@@ -1132,17 +1138,17 @@ function obtenerDashboardSOX() {
   }
 
   var casos = [], noAut = {}, consistencia = {}, personas = {}, tipos = {}, zonas = {}, periodos = {};
-  var metricas = { total: 0, noAutorizados: 0, autoAprobaciones: 0, conEvidencia: 0, porRevisar: 0, aprobados: 0 };
+  var metricas = { total: 0, paraEnvio: 0, datosIncompletos: 0, noAutorizados: 0, autoAprobaciones: 0, conEvidencia: 0, porRevisar: 0, aprobados: 0 };
 
   if (resumen && resumen.getLastRow() > 1) {
     var d = resumen.getRange(2, 1, resumen.getLastRow() - 1, resumen.getLastColumn()).getDisplayValues();
     d.forEach(function (r, idx) {
       var resultado = String(r[10] || '');
-      var categoria = resultado.indexOf('sin autorización') !== -1 ? 'Aprobador no autorizado' :
-        (resultado.indexOf('duplicidad') !== -1 ? 'Autoaprobación' : 'Otro');
       var ap = String(r[8] || '').trim(), sol = String(r[6] || '').trim();
       if (!ap || ap.toUpperCase() === 'NULL') ap = '';
       if (!sol || sol.toUpperCase() === 'NULL') sol = '';
+      var categoria = resultado.indexOf('sin autorización') !== -1 ? (ap.indexOf('@') !== -1 ? 'Aprobador no autorizado' : 'Dato incompleto') :
+        (resultado.indexOf('duplicidad') !== -1 && ap && sol && ap.toLowerCase() === sol.toLowerCase() ? 'Autoaprobación' : 'Otro');
       var periodo = String(r[12] || 'Período actual').trim() || 'Período actual';
       var keyAp = claveCaso_(ap, r[1]), keySol = claveCaso_(sol, r[1]);
       var justificador = estados[keyAp] ? ap : (estados[keySol] ? sol : '');
@@ -1159,9 +1165,13 @@ function obtenerDashboardSOX() {
       metricas.total++;
       if (categoria === 'Aprobador no autorizado') metricas.noAutorizados++;
       if (categoria === 'Autoaprobación') metricas.autoAprobaciones++;
-      if (evidencia) metricas.conEvidencia++;
-      if (estado === 'Por revisar') metricas.porRevisar++;
-      if (estado === 'Aprobado') metricas.aprobados++;
+      if (categoria === 'Dato incompleto') metricas.datosIncompletos++;
+      if (categoria === 'Aprobador no autorizado' || categoria === 'Autoaprobación') {
+        metricas.paraEnvio++;
+        if (evidencia) metricas.conEvidencia++;
+        if (estado === 'Por revisar') metricas.porRevisar++;
+        if (estado === 'Aprobado') metricas.aprobados++;
+      }
       if (ap.indexOf('@') !== -1) personas[ap.toLowerCase()] = true;
       if (sol.indexOf('@') !== -1) personas[sol.toLowerCase()] = true;
       if (r[0]) tipos[r[0]] = true;
@@ -1228,7 +1238,159 @@ function actualizarEstadoJustificacion(email, rateId, estado) {
   return { ok: true, estado: estado };
 }
 
-// Exporta el panel completo como un libro .xlsx para abrirlo directamente en Excel.
+/* ============== 13. REPORTE TRIMESTRAL PARA DISTRIBUCIÓN ============= */
+// Los Sheets creados desde cada archivo conservan su pestaña "Análisis" como
+// soporte técnico. Este libro separado es el único entregable para distribución:
+// no crea pestañas por persona; toda la segmentación se hace mediante filtros.
+function nombreReporteEnvio_(periodo) {
+  return CONFIG.PREFIJO_REPORTE_ENVIO + String(periodo || periodoOperativoActual_());
+}
+
+function carpetaPeriodoExistente_(periodo) {
+  var base = obtenerCarpetaDestino_(), it = base.getFoldersByName(String(periodo));
+  return it.hasNext() ? it.next() : null;
+}
+
+function obtenerReporteEnvioExistente_(periodo) {
+  var carpeta = carpetaPeriodoExistente_(periodo);
+  if (!carpeta) return null;
+  var it = carpeta.getFilesByName(nombreReporteEnvio_(periodo));
+  while (it.hasNext()) {
+    var f = it.next();
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) return SpreadsheetApp.openById(f.getId());
+  }
+  return null;
+}
+
+function limpiarHojaReporte_(sh) {
+  if (sh.getFilter()) sh.getFilter().remove();
+  sh.getBandings().forEach(function (b) { b.remove(); });
+  sh.clear();
+  sh.clearConditionalFormatRules();
+}
+
+function mapaJustificacionesReporte_(panel) {
+  var out = {}, sh = hojaPorNombre_(panel, CONFIG.HOJA_JUSTIFICACIONES);
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(7, sh.getLastColumn())).getDisplayValues().forEach(function (r) {
+      out[claveCaso_(r[1], r[3])] = { estado: String(r[6] || 'Por revisar'), evidencia: String(r[5] || '') };
+    });
+  }
+  return out;
+}
+
+function generarReporteEnvioTrimestral_(periodo) {
+  var p = String(periodo || periodoOperativoActual_()).trim();
+  if (!rangoPeriodo_(p)) throw new Error('El período debe tener el formato Qn AAAA.');
+  var panel = obtenerPanel_(), resumen = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN);
+  if (!resumen || resumen.getLastRow() < 2) throw new Error('No hay resultados consolidados para generar el reporte.');
+
+  var carpeta = obtenerSubcarpeta_(obtenerCarpetaDestino_(), p);
+  var ss = obtenerReporteEnvioExistente_(p);
+  if (!ss) {
+    ss = SpreadsheetApp.create(nombreReporteEnvio_(p));
+    DriveApp.getFileById(ss.getId()).moveTo(carpeta);
+  }
+  var shResumen = hojaPorNombre_(ss, CONFIG.HOJA_REPORTE_ENVIO_RESUMEN);
+  if (!shResumen) {
+    var inicial = ss.getSheets()[0];
+    if (ss.getSheets().length === 1 && inicial.getLastRow() <= 1 && inicial.getLastColumn() <= 1) {
+      shResumen = inicial.setName(CONFIG.HOJA_REPORTE_ENVIO_RESUMEN);
+    } else shResumen = ss.insertSheet(CONFIG.HOJA_REPORTE_ENVIO_RESUMEN, 0);
+  }
+  var shDetalle = hojaPorNombre_(ss, CONFIG.HOJA_REPORTE_ENVIO_DETALLE) || ss.insertSheet(CONFIG.HOJA_REPORTE_ENVIO_DETALLE);
+  limpiarHojaReporte_(shResumen); limpiarHojaReporte_(shDetalle);
+
+  var just = mapaJustificacionesReporte_(panel), noAut = {}, auto = {}, detalle = [], excluidos = 0;
+  var datos = resumen.getRange(2, 1, resumen.getLastRow() - 1, resumen.getLastColumn()).getDisplayValues();
+  datos.forEach(function (r) {
+    var filaPeriodo = String(r[12] || '').trim();
+    if (filaPeriodo !== p) return;
+    var resultado = String(r[10] || ''), ap = String(r[8] || '').trim(), sol = String(r[6] || '').trim();
+    var apValido = !!ap && ap.toUpperCase() !== 'NULL' && ap.indexOf('@') !== -1;
+    var solValido = !!sol && sol.toUpperCase() !== 'NULL' && sol.indexOf('@') !== -1;
+    var categoria = '';
+    if (resultado.indexOf('sin autorización') !== -1) {
+      if (!apValido) { excluidos++; return; }
+      categoria = 'Aprobador no autorizado';
+    } else if (resultado.indexOf('duplicidad') !== -1) {
+      if (!apValido || !solValido || ap.toLowerCase() !== sol.toLowerCase()) { excluidos++; return; }
+      categoria = 'Autoaprobación';
+    } else return;
+
+    var j = just[claveCaso_(ap, r[1])] || just[claveCaso_(sol, r[1])] || { estado: 'Pendiente de usuario', evidencia: '' };
+    detalle.push([p, categoria, r[0], r[1], r[2], r[3], r[4], r[5], sol, r[7], ap, r[9], resultado, j.estado, j.evidencia]);
+    var mapa = categoria === 'Aprobador no autorizado' ? noAut : auto;
+    var x = mapa[ap.toLowerCase()] || (mapa[ap.toLowerCase()] = { persona: ap, rol: r[9] || r[7], casos: 0, zonas: {}, tipos: {} });
+    x.casos++; if (r[4]) x.zonas[r[4]] = true; if (r[0]) x.tipos[r[0]] = true;
+  });
+
+  detalle.sort(function (a, b) { return a[1] === b[1] ? String(a[10]).localeCompare(String(b[10])) : String(a[1]).localeCompare(String(b[1])); });
+  function tabla(m) {
+    return Object.keys(m).map(function (k) { var x = m[k]; return [x.persona, x.rol || '(sin rol)', x.casos, Object.keys(x.zonas).join(', '), Object.keys(x.tipos).join(', ')]; })
+      .sort(function (a, b) { return b[2] - a[2]; });
+  }
+  var t1 = tabla(noAut), t2 = tabla(auto), W = 5, out = [];
+  function completa(a) { while (a.length < W) a.push(''); return a; }
+  out.push(completa(['REPORTE SOX PARA ENVÍO — ' + p]));
+  out.push(completa(['Documento único consolidado; no requiere pestañas por persona.']));
+  out.push(completa(['Registros incluidos', detalle.length, 'Casos de datos incompletos excluidos del envío', excluidos]));
+  out.push(completa([]));
+  var h1 = out.length + 1;
+  out.push(completa(['1. APROBADORES NO AUTORIZADOS', 'Rol', 'Registros', 'Zonas', 'Tipos']));
+  if (t1.length) t1.forEach(function (r) { out.push(completa(r)); }); else out.push(completa(['Sin casos confirmados']));
+  out.push(completa([]));
+  var h2 = out.length + 1;
+  out.push(completa(['2. PRUEBA DE CONSISTENCIA — solicitante = aprobador', 'Rol', 'Registros', 'Zonas', 'Tipos']));
+  if (t2.length) t2.forEach(function (r) { out.push(completa(r)); }); else out.push(completa(['Sin casos confirmados']));
+  shResumen.getRange(1, 1, out.length, W).setValues(out);
+  shResumen.getRange(1, 1, 1, W).merge().setBackground('#1B0A5A').setFontColor('#ffffff').setFontWeight('bold').setFontSize(15);
+  shResumen.getRange(2, 1, 1, W).merge().setFontColor('#666666').setFontStyle('italic');
+  [h1, h2].forEach(function (n) { shResumen.getRange(n, 1, 1, W).setBackground('#ED1650').setFontColor('#ffffff').setFontWeight('bold'); });
+  shResumen.setFrozenRows(3); shResumen.setColumnWidth(1, 330); shResumen.setColumnWidth(2, 220); shResumen.setColumnWidth(3, 100); shResumen.setColumnWidth(4, 210); shResumen.setColumnWidth(5, 150);
+
+  var headers = ['Período', 'Hallazgo', 'Tipo', 'Rate ID', 'Región', 'Origen', 'Zona', 'Destino', 'Solicitante', 'Rol solicitante', 'Aprobador', 'Rol aprobador', 'Resultado del control', 'Estado evidencia', 'Link evidencia'];
+  shDetalle.getRange(1, 1, 1, headers.length).setValues([headers]).setBackground('#1B0A5A').setFontColor('#ffffff').setFontWeight('bold');
+  if (detalle.length) {
+    shDetalle.getRange(2, 1, detalle.length, headers.length).setNumberFormat('@').setValues(detalle);
+    shDetalle.getRange(1, 1, detalle.length + 1, headers.length).createFilter();
+    shDetalle.getRange(1, 1, detalle.length + 1, headers.length).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
+  }
+  shDetalle.setFrozenRows(1); shDetalle.autoResizeColumns(1, headers.length);
+  [2, 9, 10, 11, 12, 13, 15].forEach(function (c) { shDetalle.setColumnWidth(c, c === 13 ? 260 : 210); });
+  SpreadsheetApp.flush();
+  return { spreadsheet: ss, url: ss.getUrl(), id: ss.getId(), periodo: p, registros: detalle.length,
+    noAutorizados: t1.reduce(function (s, r) { return s + r[2]; }, 0),
+    autoAprobaciones: t2.reduce(function (s, r) { return s + r[2]; }, 0), excluidos: excluidos };
+}
+
+function generarReporteEnvioTrimestral(periodo) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
+  try {
+    var r = generarReporteEnvioTrimestral_(periodo);
+    return { ok: true, periodo: r.periodo, url: r.url, registros: r.registros,
+      noAutorizados: r.noAutorizados, autoAprobaciones: r.autoAprobaciones, excluidos: r.excluidos };
+  } catch (e) { return { ok: false, mensaje: 'No se pudo generar el reporte para envío: ' + e.message }; }
+}
+
+function exportarSpreadsheetBlob_(ss, nombre) {
+  var mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  var url = 'https://www.googleapis.com/drive/v3/files/' + ss.getId() + '/export?mimeType=' + encodeURIComponent(mime);
+  var res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('Drive respondió ' + res.getResponseCode() + '.');
+  return res.getBlob().setName(nombre);
+}
+
+function exportarReporteEnvioExcel(periodo) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
+  try {
+    var r = generarReporteEnvioTrimestral_(periodo), nombre = 'Reporte_SOX_' + r.periodo.replace(/\s+/g, '_') + '.xlsx';
+    var blob = exportarSpreadsheetBlob_(r.spreadsheet, nombre);
+    return { ok: true, nombre: nombre, mimeType: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()), url: r.url };
+  } catch (e) { return { ok: false, mensaje: 'No se pudo generar el Excel para envío: ' + e.message }; }
+}
+
+// Exportación interna del panel maestro; no es el archivo que se distribuye.
 function exportarPanelExcel() {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
   try {

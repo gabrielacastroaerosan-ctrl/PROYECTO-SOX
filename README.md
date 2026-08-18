@@ -7,7 +7,8 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Tablero ejecutivo dentro de la app con los dos hallazgos definidos por la jefatura: aprobadores no autorizados y autoaprobaciones.
 - Sábana consolidada filtrable por período, tipo, zona, hallazgo y texto libre.
 - Vista detallada de cada caso, evidencia y estado de revisión.
-- Descarga del panel completo como archivo `.xlsx` para Excel.
+- Reporte trimestral separado del panel maestro, con solo dos hojas: `Resumen ejecutivo` y `Detalle consolidado`.
+- Descarga de ese reporte como `.xlsx`; no se crean pestañas por persona.
 - Historial de ejecuciones y estado del recordatorio quincenal.
 - Un único correo general trimestral con la sábana consolidada y acceso al portal, donde cada usuario ve solo sus registros.
 - Recordatorio general mensual a los focals, programado para el día 15 y referido al último mes cerrado.
@@ -33,9 +34,14 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 3. Revisar las dos tablas críticas en **Resumen ejecutivo**.
 4. Filtrar o inspeccionar registros en **Hallazgos**.
 5. Consultar los archivos procesados en **Repositorio Drive**.
-6. Previsualizar y enviar una sola vez el **correo general trimestral** desde **Comunicaciones**.
-7. Aprobar o devolver la evidencia desde el detalle del caso.
-8. Descargar el libro completo desde **Descargar Excel** cuando se necesite una copia fuera de Google Sheets.
+6. Generar o actualizar el **reporte para envío** desde **Comunicaciones** y revisarlo en Google Sheets o Excel.
+7. Previsualizar y enviar una sola vez el **correo general trimestral**; incluye el enlace al reporte, el portal individual y el `.xlsx` adjunto cuando su tamaño lo permite.
+8. Aprobar o devolver la evidencia desde el detalle del caso.
+
+## Separación de entregables
+
+- **Soporte técnico interno:** cada archivo procesado conserva su propia hoja `Análisis`; el panel maestro mantiene datos incompletos y trazabilidad para investigación.
+- **Entregable para jefatura y equipos:** un solo libro trimestral, filtrable, sin hojas individuales. Los casos sin un correo de aprobador válido se excluyen de la distribución y permanecen en el análisis interno.
 
 ## Nota de compatibilidad
 
