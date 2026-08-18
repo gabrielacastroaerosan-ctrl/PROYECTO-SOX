@@ -10,6 +10,8 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Descarga del panel completo como archivo `.xlsx` para Excel.
 - Historial de ejecuciones y estado del recordatorio quincenal.
 - Portal de usuario con resumen, filtros y captura de nota o evidencia.
+- Flujo guiado de cinco pasos que indica la siguiente acción del período.
+- Explorador de solo lectura para consultar las carpetas y archivos del repositorio SOX en Drive desde la app.
 - Se conserva la actualización del Google Sheet maestro y la organización de archivos en Drive.
 
 ## Instalación
@@ -28,9 +30,10 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 2. Procesar los archivos del trimestre desde **Procesar archivos**.
 3. Revisar las dos tablas críticas en **Resumen ejecutivo**.
 4. Filtrar o inspeccionar registros en **Hallazgos**.
-5. Enviar invitaciones desde **Comunicaciones**.
-6. Aprobar o devolver la evidencia desde el detalle del caso.
-7. Descargar el libro completo desde **Descargar Excel** cuando se necesite una copia fuera de Google Sheets.
+5. Consultar los archivos procesados en **Repositorio Drive**.
+6. Enviar invitaciones desde **Comunicaciones**.
+7. Aprobar o devolver la evidencia desde el detalle del caso.
+8. Descargar el libro completo desde **Descargar Excel** cuando se necesite una copia fuera de Google Sheets.
 
 ## Nota de compatibilidad
 

@@ -1031,6 +1031,8 @@ function obtenerDashboardSOX() {
       var categoria = resultado.indexOf('sin autorización') !== -1 ? 'Aprobador no autorizado' :
         (resultado.indexOf('duplicidad') !== -1 ? 'Autoaprobación' : 'Otro');
       var ap = String(r[8] || '').trim(), sol = String(r[6] || '').trim();
+      if (!ap || ap.toUpperCase() === 'NULL') ap = '';
+      if (!sol || sol.toUpperCase() === 'NULL') sol = '';
       var periodo = String(r[12] || 'Período actual').trim() || 'Período actual';
       var keyAp = claveCaso_(ap, r[1]), keySol = claveCaso_(sol, r[1]);
       var justificador = estados[keyAp] ? ap : (estados[keySol] ? sol : '');
@@ -1050,8 +1052,8 @@ function obtenerDashboardSOX() {
       if (evidencia) metricas.conEvidencia++;
       if (estado === 'Por revisar') metricas.porRevisar++;
       if (estado === 'Aprobado') metricas.aprobados++;
-      if (ap) personas[ap.toLowerCase()] = true;
-      if (sol) personas[sol.toLowerCase()] = true;
+      if (ap.indexOf('@') !== -1) personas[ap.toLowerCase()] = true;
+      if (sol.indexOf('@') !== -1) personas[sol.toLowerCase()] = true;
       if (r[0]) tipos[r[0]] = true;
       if (r[4]) zonas[r[4]] = true;
       periodos[periodo] = true;
@@ -1087,6 +1089,7 @@ function obtenerDashboardSOX() {
   return {
     ok: true,
     actualizado: ultimaEjecucion,
+    tieneEjecuciones: !!(historial && historial.getLastRow() > 1),
     panelUrl: panel.getUrl(),
     carpetaUrl: obtenerCarpetaDestino_().getUrl(),
     metricas: metricas,
@@ -1128,4 +1131,83 @@ function exportarPanelExcel() {
     return { ok: true, nombre: 'Control_SOX_' + fecha + '.xlsx', mimeType: mime,
       base64: Utilities.base64Encode(res.getBlob().getBytes()) };
   } catch (e) { return { ok: false, mensaje: 'No se pudo generar el Excel: ' + e.message }; }
+}
+
+/* ==================== 13. EXPLORADOR DEL REPOSITORIO DRIVE ============ */
+// Expone únicamente el contenido de la carpeta SOX configurada. No permite
+// navegar por otras carpetas del Drive del usuario ni modificar archivos.
+function listarRepositorioSOX(carpetaId) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo los administradores SOX pueden consultar el repositorio.' };
+  try {
+    var raiz = obtenerCarpetaDestino_();
+    var carpeta = raiz;
+    if (carpetaId && String(carpetaId) !== raiz.getId()) {
+      carpeta = DriveApp.getFolderById(String(carpetaId));
+      if (!carpetaPerteneceA_(carpeta, raiz.getId())) {
+        return { ok: false, mensaje: 'La carpeta solicitada no pertenece al repositorio SOX.' };
+      }
+    }
+
+    var carpetas = [], itC = carpeta.getFolders();
+    while (itC.hasNext() && carpetas.length < 100) {
+      var c = itC.next();
+      carpetas.push({ id: c.getId(), nombre: c.getName(), url: c.getUrl(), actualizado: fechaDrive_(c.getLastUpdated()) });
+    }
+    carpetas.sort(function (a, b) { return b.nombre.localeCompare(a.nombre); });
+
+    var archivos = [], itA = carpeta.getFiles();
+    while (itA.hasNext() && archivos.length < 300) {
+      var a = itA.next();
+      archivos.push({
+        id: a.getId(), nombre: a.getName(), url: a.getUrl(), mimeType: a.getMimeType(),
+        tipo: tipoArchivoDrive_(a.getMimeType(), a.getName()), tamano: tamanoDrive_(a.getSize()),
+        actualizado: fechaDrive_(a.getLastUpdated())
+      });
+    }
+    archivos.sort(function (a, b) { return String(b.actualizado).localeCompare(String(a.actualizado)); });
+
+    var migas = [{ id: raiz.getId(), nombre: 'Repositorio SOX' }];
+    if (carpeta.getId() !== raiz.getId()) migas.push({ id: carpeta.getId(), nombre: carpeta.getName() });
+    return {
+      ok: true, raizId: raiz.getId(), carpetaId: carpeta.getId(), nombre: carpeta.getName(),
+      url: carpeta.getUrl(), migas: migas, carpetas: carpetas, archivos: archivos,
+      truncado: carpetas.length >= 100 || archivos.length >= 300
+    };
+  } catch (e) { return { ok: false, mensaje: 'No se pudo consultar Drive: ' + e.message }; }
+}
+
+function carpetaPerteneceA_(carpeta, raizId) {
+  if (carpeta.getId() === raizId) return true;
+  var actuales = [carpeta], vistos = {}, profundidad = 0;
+  while (actuales.length && profundidad < 12) {
+    var siguientes = [];
+    for (var i = 0; i < actuales.length; i++) {
+      var padres = actuales[i].getParents();
+      while (padres.hasNext()) {
+        var p = padres.next();
+        if (p.getId() === raizId) return true;
+        if (!vistos[p.getId()]) { vistos[p.getId()] = true; siguientes.push(p); }
+      }
+    }
+    actuales = siguientes; profundidad++;
+  }
+  return false;
+}
+
+function fechaDrive_(fecha) {
+  return Utilities.formatDate(fecha, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+}
+function tamanoDrive_(bytes) {
+  var n = Number(bytes || 0);
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return Math.round(n / 1024) + ' KB';
+  return (Math.round(n / 104857.6) / 10) + ' MB';
+}
+function tipoArchivoDrive_(mime, nombre) {
+  var m = String(mime || ''), n = String(nombre || '').toLowerCase();
+  if (m.indexOf('spreadsheet') !== -1 || /\.xlsx?$/.test(n)) return 'Hoja de cálculo';
+  if (m.indexOf('pdf') !== -1 || /\.pdf$/.test(n)) return 'PDF';
+  if (m.indexOf('zip') !== -1 || /\.zip$/.test(n)) return 'ZIP';
+  if (m.indexOf('document') !== -1) return 'Documento';
+  return 'Archivo';
 }
