@@ -70,10 +70,13 @@ var CONFIG = {
   HOJA_CORREOS: 'Correos a enviar',
   HOJA_REPORTE: 'Reporte Final',
   HOJA_HISTORIAL: 'Historial de ejecuciones',
+  HOJA_HISTORIAL_COMUNICACIONES: 'Historial comunicaciones',
 
-  // Recordatorio quincenal de matriz.
+  // Recordatorio mensual de matriz (día 15, último mes cerrado).
   RESPONSABLE_SOX: 'gabrielacastro.aerosan@latam.com',
   FOCALS_EMAILS: [],   // pega aquí los correos de los focals (SAM/NAM/EUR)
+  // Lista o grupos de distribución que reciben UN SOLO correo general trimestral.
+  DESTINATARIOS_REPORTE: [],
 
   // Admins que ven la vista de carga/procesamiento (el resto ve su portal).
   ADMINS: ['gabrielacastro.aerosan@latam.com', 'ALEJANDRA_CORREO_AQUI@latam.com'],
@@ -199,15 +202,7 @@ function previewCorreoInvitacion(email) {
 }
 
 function enviarInvitacion(email) {
-  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
-  var url = urlApp_();
-  var casos = casosParaEmail_(email).casos.length;
-  try {
-    MailApp.sendEmail({ to: email,
-      subject: 'Revisión SOX de tarifas — tienes ' + casos + ' caso(s) por justificar',
-      htmlBody: correoInvitacionHTML_(email, casos, url) });
-    return { ok: true };
-  } catch (e) { return { ok: false, mensaje: e.message }; }
+  return { ok: false, mensaje: 'El envío individual está deshabilitado. Usa el correo general trimestral.' };
 }
 
 // Lista de usuarios con casos (para enviar invitaciones masivas).
@@ -230,19 +225,134 @@ function getUsuariosConCasos() {
 }
 
 function enviarInvitacionesTodos() {
+  return enviarCorreoGeneralTrimestral(periodoOperativoActual_());
+}
+
+// Calendario operativo: recordatorio mensual el día 15 y cierre por trimestre.
+function obtenerCalendarioComunicacionesSOX() {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
-  var lista = getUsuariosConCasos().usuarios || [];
-  var url = urlApp_(), enviados = 0;
-  lista.forEach(function (u) {
-    if (u.email.toLowerCase().indexOf('@latam.com') === -1) return; // solo internos
-    try {
-      MailApp.sendEmail({ to: u.email,
-        subject: 'Revisión SOX de tarifas — tienes ' + u.casos + ' caso(s) por justificar',
-        htmlBody: correoInvitacionHTML_(u.email, u.casos, url) });
-      enviados++;
-    } catch (e) {}
+  var hoy = new Date(), y = hoy.getFullYear(), m = hoy.getMonth(), q = Math.floor(m / 3) + 1;
+  var proximo = new Date(y, m, 15, 9, 0, 0);
+  if (hoy.getTime() > proximo.getTime()) proximo = new Date(y, m + 1, 15, 9, 0, 0);
+  var cierre = new Date(y, q * 3, 0, 23, 59, 59);
+  var destinatarios = destinatariosReporte_();
+  return {
+    ok: true, periodo: 'Q' + q + ' ' + y,
+    proximoRecordatorio: fechaDrive_(proximo), cierreTrimestre: fechaDrive_(cierre),
+    destinatarios: destinatarios, totalDestinatarios: destinatarios.length,
+    recordatorioActivo: ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'enviarRecordatorioMatriz'; })
+  };
+}
+
+function periodoOperativoActual_() {
+  var d = new Date(); return 'Q' + (Math.floor(d.getMonth() / 3) + 1) + ' ' + d.getFullYear();
+}
+
+function destinatariosReporte_() {
+  var base = (CONFIG.DESTINATARIOS_REPORTE && CONFIG.DESTINATARIOS_REPORTE.length)
+    ? CONFIG.DESTINATARIOS_REPORTE : (CONFIG.FOCALS_EMAILS || []);
+  var vistos = {}, out = [];
+  base.forEach(function (x) {
+    var e = String(x || '').trim().toLowerCase();
+    if (e && e.indexOf('@') !== -1 && !vistos[e]) { vistos[e] = true; out.push(e); }
   });
-  return { ok: true, enviados: enviados, total: lista.length };
+  return out;
+}
+
+function resumenPeriodoCorreo_(dashboard, periodo) {
+  var casos = (dashboard.casos || []).filter(function (c) { return !periodo || c.periodo === periodo || c.periodo === 'Período actual'; });
+  var noAut = {}, auto = {};
+  casos.forEach(function (c) {
+    var mapa = c.categoria === 'Aprobador no autorizado' ? noAut : auto;
+    var persona = c.aprobador || '(sin aprobador)';
+    mapa[persona] = (mapa[persona] || 0) + 1;
+  });
+  function top(m) { return Object.keys(m).map(function (k) { return { persona: k, registros: m[k] }; })
+    .sort(function (a, b) { return b.registros - a.registros; }).slice(0, 10); }
+  return {
+    total: casos.length,
+    noAutorizados: casos.filter(function (c) { return c.categoria === 'Aprobador no autorizado'; }).length,
+    autoAprobaciones: casos.filter(function (c) { return c.categoria === 'Autoaprobación'; }).length,
+    topNoAutorizados: top(noAut), topAutoAprobaciones: top(auto)
+  };
+}
+
+function escapeHtml_(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function correoGeneralTrimestralHTML_(periodo, resumen, panelUrl, portalUrl, carpetaUrl) {
+  function filas(items) {
+    if (!items.length) return '<tr><td colspan="2" style="padding:10px;color:#16864b">Sin registros</td></tr>';
+    return items.map(function (x) { return '<tr><td style="padding:8px;border-bottom:1px solid #eee">' + escapeHtml_(x.persona) +
+      '</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">' + x.registros + '</td></tr>'; }).join('');
+  }
+  return '<div style="font-family:Arial,sans-serif;background:#f4f4fa;padding:24px;color:#202033">' +
+    '<div style="max-width:720px;margin:auto;background:#fff;border:1px solid #e6e5ef;border-radius:14px;overflow:hidden">' +
+    '<div style="background:#0f004f;color:#fff;padding:22px 26px"><b style="font-size:22px;letter-spacing:1px">LATAM</b>' +
+    '<div style="margin-top:7px;font-size:15px;font-weight:700">Control SOX de Tarifas - ' + escapeHtml_(periodo) + '</div></div>' +
+    '<div style="padding:25px"><p>Hola equipo,</p><p style="line-height:1.6">Finalizamos el procesamiento trimestral. Se identificaron <b>' + resumen.total +
+    ' registros críticos</b> en la sábana consolidada. Este es el único correo general del período; cada usuario podrá ingresar al portal y visualizar únicamente los registros asociados a su cuenta.</p>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:20px 0"><div style="background:#feecef;padding:12px 16px;border-radius:9px"><b>' + resumen.noAutorizados +
+    '</b><br><span style="font-size:12px">Aprobadores no autorizados</span></div><div style="background:#fff3df;padding:12px 16px;border-radius:9px"><b>' + resumen.autoAprobaciones +
+    '</b><br><span style="font-size:12px">Autoaprobaciones</span></div></div>' +
+    '<h3 style="color:#0f004f;font-size:14px">1. Aprobadores no autorizados</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topNoAutorizados) + '</table>' +
+    '<h3 style="color:#0f004f;font-size:14px;margin-top:20px">2. Prueba de consistencia</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topAutoAprobaciones) + '</table>' +
+    '<div style="margin-top:24px"><a href="' + escapeHtml_(portalUrl) + '" style="display:inline-block;background:#ed1650;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Consultar mis registros</a></div>' +
+    '<p style="font-size:12px;line-height:1.7;color:#666;margin-top:20px">Sábana consolidada: <a href="' + escapeHtml_(panelUrl) + '">abrir Sheet</a><br>Repositorio de evidencias: <a href="' + escapeHtml_(carpetaUrl) + '">abrir Drive</a></p>' +
+    '<p style="font-size:12px;color:#666">Las justificaciones deben incluir la cadena de correos y, cuando corresponda, la aprobación de un jefe o director.</p></div></div></div>';
+}
+
+function previewCorreoGeneralTrimestral(periodo) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
+  var p = String(periodo || periodoOperativoActual_());
+  var d = obtenerDashboardSOX();
+  if (!d.ok) return d;
+  var resumen = resumenPeriodoCorreo_(d, p), destinatarios = destinatariosReporte_();
+  var portalUrl = urlApp_() + '?view=portal';
+  var asunto = 'Control SOX de Tarifas - Resultados ' + p + ' y solicitud de evidencias';
+  return { ok: true, periodo: p, asunto: asunto, destinatarios: destinatarios, resumen: resumen,
+    html: correoGeneralTrimestralHTML_(p, resumen, d.panelUrl, portalUrl, d.carpetaUrl) };
+}
+
+function prepararHistorialComunicaciones_(panel) {
+  var hoja = hojaPorNombre_(panel, CONFIG.HOJA_HISTORIAL_COMUNICACIONES);
+  if (!hoja) {
+    hoja = panel.insertSheet(CONFIG.HOJA_HISTORIAL_COMUNICACIONES);
+    hoja.getRange(1, 1, 1, 6).setValues([['Fecha', 'Tipo', 'Período', 'Destinatarios', 'Asunto', 'Registros']])
+      .setFontWeight('bold').setBackground('#1B0A5A').setFontColor('#ffffff');
+    hoja.setFrozenRows(1);
+  }
+  return hoja;
+}
+
+function enviarCorreoGeneralTrimestral(periodo) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
+  var prev = previewCorreoGeneralTrimestral(periodo);
+  if (!prev.ok) return prev;
+  if (!prev.destinatarios.length) return { ok: false, mensaje: 'Configura DESTINATARIOS_REPORTE antes de enviar.' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (_) { return { ok: false, mensaje: 'Hay otro envío en curso. Intenta nuevamente.' }; }
+  try {
+    var panel = obtenerPanel_(), historial = prepararHistorialComunicaciones_(panel);
+    if (historial.getLastRow() > 1) {
+      var anteriores = historial.getRange(2, 2, historial.getLastRow() - 1, 2).getDisplayValues();
+      var repetido = anteriores.some(function (r) { return r[0] === 'Correo general trimestral' && r[1] === prev.periodo; });
+      if (repetido) return { ok: false, mensaje: 'El correo general de ' + prev.periodo + ' ya fue enviado. No se realizó un segundo envío.' };
+    }
+    MailApp.sendEmail({
+      to: prev.destinatarios.join(','), subject: prev.asunto,
+      body: 'Resultados del control SOX ' + prev.periodo + '. Consulte el portal para revisar los registros asociados a su cuenta.',
+      htmlBody: prev.html
+    });
+    historial.appendRow([
+      new Date(), 'Correo general trimestral', prev.periodo, prev.destinatarios.join(', '), prev.asunto, prev.resumen.total
+    ]);
+    return { ok: true, enviados: 1, destinatarios: prev.destinatarios.length, periodo: prev.periodo };
+  } catch (e) { return { ok: false, mensaje: 'No se pudo enviar el correo general: ' + e.message }; }
+  finally { try { lock.releaseLock(); } catch (_) {} }
 }
 
 /* ===================== FIN COMUNICACIONES ============================= */
@@ -290,7 +400,7 @@ function onOpen() {
   try {
     SpreadsheetApp.getUi().createMenu('🛡️ Control SOX')
       .addItem('Abrir app', 'mostrarDialogoCarga')
-      .addItem('Configurar recordatorio quincenal', 'configurarRecordatorioQuincenal')
+      .addItem('Configurar recordatorio mensual (día 15)', 'configurarRecordatorioQuincenal')
       .addToUi();
   } catch (e) {}
 }
@@ -446,7 +556,7 @@ function construirReporteFinal_(panel) {
   rep.setFrozenRows(1);
 }
 
-/* Recordatorio quincenal de actualización de matriz (feedback jefa). */
+/* Recordatorio general mensual de actualización de matriz (día 15). */
 function configurarRecordatorioQuincenal() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'enviarRecordatorioMatriz') ScriptApp.deleteTrigger(t);
@@ -457,7 +567,7 @@ function configurarRecordatorioQuincenal() {
 function enviarRecordatorioMatriz() {
   var panel = obtenerPanel_();
   var para = (CONFIG.FOCALS_EMAILS && CONFIG.FOCALS_EMAILS.length) ? CONFIG.FOCALS_EMAILS.join(',') : CONFIG.RESPONSABLE_SOX;
-  var asunto = 'Recordatorio quincenal — Actualización de la matriz de aprobadores (SOX)';
+  var asunto = 'Recordatorio mensual - Actualización de la matriz de aprobadores (SOX)';
   var cuerpo = 'Hola,\n\nRecordatorio para actualizar la matriz de aprobadores SOX (SAM / NAM / EUR) con la información del último mes cerrado.\n\n' +
     'Matriz: ' + panel.getUrl() + '\n\nResponsable del proceso SOX: ' + CONFIG.RESPONSABLE_SOX + '\n\nGracias.';
   MailApp.sendEmail({ to: para, cc: CONFIG.RESPONSABLE_SOX, subject: asunto, body: cuerpo });
