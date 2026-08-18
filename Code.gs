@@ -18,6 +18,7 @@
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
+  APP_VERSION: '2026.08.18.2',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -487,6 +488,7 @@ function obtenerInfoInicial() {
   }
   var carpeta = obtenerCarpetaDestino_();
   return {
+    version: CONFIG.APP_VERSION,
     panelUrl: panel.getUrl(),
     carpetaUrl: carpeta ? carpeta.getUrl() : '',
     permisos: n,
