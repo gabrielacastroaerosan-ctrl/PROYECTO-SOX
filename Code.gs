@@ -18,7 +18,7 @@
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
-  APP_VERSION: '2026.08.18.8',
+  APP_VERSION: '2026.08.18.10',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -64,7 +64,9 @@ var CONFIG = {
 
   // Columnas de fecha para el filtro del trimestre (descartar arrastres).
   COL_CREADO:   ['Created Date', 'Creation Date', 'Fecha creación'],
-  COL_MODIFICADO: ['Last Modified Date', 'Modified Date', 'Fecha modificación'],
+  COL_MODIFICADO: ['Last Modified Date', 'Last Modified', 'Modified Date', 'Fecha modificación'],
+  COL_FECHA_APROBACION: ['Approved Date', 'APPROVED DATE', 'Approval Date', 'Fecha aprobación', 'Fecha de aprobación'],
+  COL_VALIDEZ_DESDE: ['Validity From', 'VILIDITY FROM', 'Valid From', 'Effective From Date'],
   FILTRAR_POR_PERIODO: true,
 
   HOJA_JUSTIFICADOS: 'Justificados',
@@ -708,6 +710,7 @@ function procesarArchivoIndividualSOX(datos) {
     var periodoElegido = String(datos.periodo || '').trim();
     if (!rangoPeriodo_(periodoElegido)) throw new Error('No se recibió un período válido para esta carga.');
     var resultados = [], total = 0, reemplazados = 0, subUrl = carpetaBase.getUrl();
+    var controlCalculo = { filasLeidas: 0, enAlcance: 0, fueraPeriodo: 0, sinFecha: 0, fueraNaturaleza: 0, camposFecha: {} };
     for (var i = 0; i < blobs.length; i++) {
       var periodo = periodoElegido;
       var sub = obtenerSubcarpeta_(carpetaBase, periodo);
@@ -717,10 +720,16 @@ function procesarArchivoIndividualSOX(datos) {
       agregarResumen_(panel, r.resumen);
       total += r.resumen.length;
       reemplazados += r.info.reemplazados || 0;
+      controlCalculo.filasLeidas += Number(r.info.filas || 0);
+      controlCalculo.enAlcance += Number(r.info.enAlcance || 0);
+      controlCalculo.fueraPeriodo += Number(r.info.fueraPeriodo || 0);
+      controlCalculo.sinFecha += Number(r.info.sinFecha || 0);
+      controlCalculo.fueraNaturaleza += Number(r.info.fueraNaturaleza || 0);
+      controlCalculo.camposFecha[r.info.tipo] = r.info.campoFecha;
     }
     return {
       ok: true, archivos: resultados, inconsistencias: total,
-      periodo: periodoElegido, reemplazados: reemplazados,
+      periodo: periodoElegido, reemplazados: reemplazados, controlCalculo: controlCalculo,
       carpetaUrl: subUrl, panelUrl: panel.getUrl(),
       segundos: Math.round((Date.now() - t0) / 100) / 10
     };
@@ -762,7 +771,9 @@ function procesarUnArchivo_(blob, carpeta, permisos, dicc, periodo, panel, justi
       nombre: base, tipo: tipo.hoja, periodo: periodo, url: ss.getUrl(),
       reemplazados: reemplazados,
       filas: matriz.length - 1, columnas: matriz[0].length,
-      noCumple: stats.noCumple, conNull: stats.conNull,
+      noCumple: stats.noCumple, conNull: stats.conNull, enAlcance: stats.enAlcance,
+      fueraPeriodo: stats.fueraPeriodo, sinFecha: stats.sinFecha, fueraNaturaleza: stats.fueraNaturaleza,
+      campoFecha: stats.campoFecha,
       segundos: Math.round((Date.now() - t0) / 100) / 10
     },
     resumen: stats.resumenRows
@@ -845,12 +856,17 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
   var idxCriticos = CONFIG.CAMPOS_CRITICOS
     .map(function (c) { return buscarColumna_(headers, [c]); }).filter(function (x) { return x > 0; });
 
-  // Columna de fecha según el tipo (Spot/Street=creación; Promo/Contract=modificación).
-  var esSpotStreet = (claveTipo === 'SPOT' || claveTipo === 'STRIP');
-  var colFecha = esSpotStreet
-    ? buscarColumna_(headers, CONFIG.COL_CREADO)
-    : buscarColumna_(headers, CONFIG.COL_MODIFICADO);
+  // Criterio de fecha confirmado por tipo de archivo:
+  // Spot=Approved Date; Promo/Contract=Last Modified; Street/Strip=Created Date.
+  var aliasFecha = claveTipo === 'SPOT' ? CONFIG.COL_FECHA_APROBACION
+    : ((claveTipo === 'PROMO' || claveTipo === 'CONTRACT') ? CONFIG.COL_MODIFICADO : CONFIG.COL_CREADO);
+  var colFecha = buscarColumna_(headers, aliasFecha);
+  var nombreFechaEsperada = claveTipo === 'SPOT' ? 'Approved Date'
+    : ((claveTipo === 'PROMO' || claveTipo === 'CONTRACT') ? 'Last Modified Date' : 'Created Date');
   var rango = (CONFIG.FILTRAR_POR_PERIODO ? rangoPeriodo_(periodo) : null);
+  if (rango && !colFecha) {
+    throw new Error('No se encontró la columna ' + nombreFechaEsperada + ' en ' + tipoLabel + '. No se procesó el archivo para evitar mezclar períodos.');
+  }
 
   var cabecerasSOX = [H.consist, H.apMat, H.reqMat, H.rolAp, H.rolReq, H.regAp, H.zona, H.pais, H.result, H.estado, H.periodo, H.nul, H.alc];
   var cSOX = base + 1;
@@ -858,7 +874,7 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
     .setFontWeight('bold').setBackground('#188038').setFontColor('#ffffff');
 
   var salida = [], resumenRows = [], conNull = 0;
-  var totDup = 0, totSinAut = 0, totCumple = 0, totAlc = 0, totFuera = 0, totJustif = 0, totPend = 0;
+  var totDup = 0, totSinAut = 0, totCumple = 0, totAlc = 0, totFuera = 0, totSinFecha = 0, totFueraNat = 0, totJustif = 0, totPend = 0;
   var apStats = {}, solStats = {}, consStats = {};
 
   for (var r = 1; r < n; r++) {
@@ -880,17 +896,18 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
     var zona = d ? d.region2 : '';
     var pais = d ? d.pais : '';
 
-    var resultado;
-    if (consist === 'NO cumple') { resultado = 'No cumple: duplicidad de roles'; totDup++; }
-    else if (apEnMat === 'No está en la matriz') { resultado = 'No cumple: sin autorización'; totSinAut++; }
-    else { resultado = 'Cumple'; totCumple++; }
+    var fallaDuplicidad = consist === 'NO cumple';
+    var fallaAutorizacion = apEnMat === 'No está en la matriz';
+    var resultado = fallaDuplicidad && fallaAutorizacion
+      ? 'No cumple: duplicidad de roles y sin autorización'
+      : (fallaDuplicidad ? 'No cumple: duplicidad de roles' : (fallaAutorizacion ? 'No cumple: sin autorización' : 'Cumple'));
 
     // ¿La fila pertenece al trimestre? (descartar arrastres de Q viejos)
     var enPeriodo = 'SÍ';
-    if (rango && colFecha) {
+    if (rango) {
       var f = parseFecha_(fila[colFecha - 1]);
-      if (f) enPeriodo = (f >= rango.ini && f <= rango.fin) ? 'SÍ' : 'NO';
-      else enPeriodo = 'sin fecha';
+      if (!f) enPeriodo = 'SIN FECHA';
+      else if (f < rango.ini || f > rango.fin) enPeriodo = 'NO';
     }
 
     // ¿Ya justificado en un Q anterior?
@@ -905,45 +922,59 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
     });
     var strNull = faltantes.join(', ');
     var enAlcNat = enAlcance_(claveTipo, colNat ? fila[colNat - 1] : '');
-    var enAlc = enAlcNat && (enPeriodo !== 'NO');   // fuera de período => fuera de alcance
+    var enAlc = enAlcNat && enPeriodo === 'SÍ';
+    if (!enAlcNat) totFueraNat++;
+    if (enPeriodo === 'SIN FECHA') totSinFecha++;
+    else if (enPeriodo !== 'SÍ') totFuera++;
+
+    // Las dos pruebas son independientes. Una misma tarifa puede aportar un
+    // hallazgo a cada control; por eso no se usa precedencia entre categorías.
+    if (enAlc) {
+      if (fallaDuplicidad) totDup++;
+      if (fallaAutorizacion) totSinAut++;
+      if (!fallaDuplicidad && !fallaAutorizacion) totCumple++;
+    }
 
     // Estado (criterios del instructivo).
     var estado;
     if (resultado === 'Cumple') estado = 'Cumple';
     else if (justificado) { estado = 'Atípico justificado'; totJustif++; }
-    else if (enAlc) { estado = 'Pendiente'; totPend++; }
+    else if (enAlc) { estado = 'Pendiente'; totPend += (fallaDuplicidad ? 1 : 0) + (fallaAutorizacion ? 1 : 0); }
     else estado = 'Fuera de alcance';
-    if (enPeriodo === 'NO') totFuera++;
 
     salida.push([consist, apEnMat, reqEnMat, rolAp, rolReq, regAp, zona, pais, resultado, estado, enPeriodo, strNull, enAlc ? 'SÍ' : 'NO']);
     if (strNull) conNull++;
     if (enAlc) totAlc++;
 
-    if (apOk) {
+    if (enAlc && apOk) {
       var a = apStats[ap] || (apStats[ap] = { count: 0, noCumple: 0, enMat: (apEnMat === 'Está en la matriz'), rol: rolAp, zonas: {}, rates: [] });
       a.count++;
-      if (resultado.indexOf('No cumple') === 0) a.noCumple++;
+      if (fallaAutorizacion) a.noCumple++;
       if (zona) a.zonas[zona] = (a.zonas[zona] || 0) + 1;
       if (a.rates.length < 3 && rateId && rateId !== 'NULL' && a.rates.indexOf(rateId) === -1) a.rates.push(rateId);
     }
-    if (solOk) {
+    if (enAlc && solOk) {
       var s = solStats[sol] || (solStats[sol] = { count: 0, enMat: (reqEnMat === 'Está en la matriz'), rol: rolReq });
       s.count++;
     }
     // Consistencia: solicitante = aprobador (agrupado por persona).
-    if (consist === 'NO cumple' && apOk) {
+    if (enAlc && fallaDuplicidad && apOk) {
       var cs = consStats[ap] || (consStats[ap] = { count: 0, rol: rolAp, zonas: {}, rates: [] });
       cs.count++;
       if (zona) cs.zonas[zona] = (cs.zonas[zona] || 0) + 1;
       if (cs.rates.length < 3 && rateId && rateId !== 'NULL' && cs.rates.indexOf(rateId) === -1) cs.rates.push(rateId);
     }
 
-    // Al Resumen solo entran los PENDIENTES (en alcance, no cumple, sin justificar).
-    if (enAlc && resultado.indexOf('No cumple') === 0 && !justificado) {
-      resumenRows.push([
-        tipoLabel, rateId, iReg ? fila[iReg - 1] : '',
-        ori, zona, colDes ? fila[colDes - 1] : '',
-        sol, rolReq, ap, rolAp, resultado, strNull, periodo
+    // El consolidado conserva un registro por hallazgo. Si una tarifa falla
+    // ambos controles, aparecen dos filas con el mismo Rate ID y distinto resultado.
+    if (enAlc && !justificado) {
+      if (fallaAutorizacion) resumenRows.push([
+        tipoLabel, rateId, iReg ? fila[iReg - 1] : '', ori, zona, colDes ? fila[colDes - 1] : '',
+        sol, rolReq, ap, rolAp, 'No cumple: sin autorización', strNull, periodo
+      ]);
+      if (fallaDuplicidad) resumenRows.push([
+        tipoLabel, rateId, iReg ? fila[iReg - 1] : '', ori, zona, colDes ? fila[colDes - 1] : '',
+        sol, rolReq, ap, rolAp, 'No cumple: duplicidad de roles', strNull, periodo
       ]);
     }
   }
@@ -953,10 +984,13 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
 
   escribirAnalisis_(hoja.getParent(), tipoLabel,
     { total: n - 1, enAlcance: totAlc, cumple: totCumple, dup: totDup, sinAut: totSinAut,
-      conNull: conNull, fuera: totFuera, justif: totJustif, pend: totPend },
+      conNull: conNull, fuera: totFuera, sinFecha: totSinFecha, fueraNaturaleza: totFueraNat,
+      justif: totJustif, pend: totPend },
     apStats, consStats);
 
-  return { noCumple: totPend, conNull: conNull, resumenRows: resumenRows };
+  return { noCumple: totPend, conNull: conNull, enAlcance: totAlc, fueraPeriodo: totFuera,
+    sinFecha: totSinFecha, fueraNaturaleza: totFueraNat,
+    campoFecha: headers[colFecha - 1] || nombreFechaEsperada, resumenRows: resumenRows };
 }
 
 /* Análisis por archivo: SOLO las 2 tablas críticas (feedback jefa):
@@ -980,7 +1014,11 @@ function escribirAnalisis_(ss, tipoLabel, tot, apStats, consStats) {
   out.push(fila(['Total filas', tot.total]));
   out.push(fila(['En alcance (período + tipo)', tot.enAlcance]));
   out.push(fila(['Fuera de período (arrastres descartados)', tot.fuera]));
+  out.push(fila(['Sin fecha válida (descartados)', tot.sinFecha]));
+  out.push(fila(['Fuera de Nature of Spot (descartados)', tot.fueraNaturaleza]));
   out.push(fila(['Cumple', tot.cumple]));
+  out.push(fila(['Hallazgos - aprobador no autorizado', tot.sinAut]));
+  out.push(fila(['Hallazgos - duplicidad de roles', tot.dup]));
   out.push(fila(['Atípico justificado (Q anterior)', tot.justif]));
   out.push(fila(['PENDIENTES a revisar', tot.pend]));
   out.push(fila(['Filas con NULL crítico', tot.conNull]));
