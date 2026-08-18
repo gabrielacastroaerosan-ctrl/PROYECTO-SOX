@@ -18,7 +18,7 @@
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
-  APP_VERSION: '2026.08.18.2',
+  APP_VERSION: '2026.08.18.3',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -361,7 +361,7 @@ function correoGeneralTrimestralHTML_(periodo, resumen, reporteUrl, portalUrl, c
 function previewCorreoGeneralTrimestral(periodo) {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo admins.' };
   var p = String(periodo || periodoOperativoActual_());
-  var d = obtenerDashboardSOX();
+  var d = obtenerDashboardSOX(p);
   if (!d.ok) return d;
   var resumen = resumenPeriodoCorreo_(d, p), destinatarios = destinatariosReporte_();
   var reporte = obtenerReporteEnvioExistente_(p);
@@ -566,9 +566,28 @@ function finalizarLoteSOX(periodo) {
   construirReporteFinal_(panel);
   var correos = construirCorreos_(panel, periodo);
   var resumen = hojaPorNombre_(panel, CONFIG.HOJA_RESUMEN);
-  var pendientes = resumen ? Math.max(0, resumen.getLastRow() - 1) : 0;
-  registrarEjecucion_(panel, pendientes, correos);
-  return { ok: true, panelUrl: panel.getUrl(), correos: correos, pendientes: pendientes };
+  var verificacion = verificarPeriodoConsolidado_(resumen, periodo);
+  registrarEjecucion_(panel, verificacion.registros, correos, periodo);
+  return { ok: true, panelUrl: panel.getUrl(), correos: correos, pendientes: verificacion.registros,
+    periodo: String(periodo || ''), verificacion: verificacion };
+}
+
+function verificarPeriodoConsolidado_(resumen, periodo) {
+  var out = { registros: 0, noAutorizados: 0, autoAprobaciones: 0, datosIncompletos: 0 };
+  if (!resumen || resumen.getLastRow() < 2) return out;
+  var p = String(periodo || '').trim();
+  resumen.getRange(2, 1, resumen.getLastRow() - 1, resumen.getLastColumn()).getDisplayValues().forEach(function (r) {
+    if (String(r[12] || '').trim() !== p) return;
+    out.registros++;
+    var resultado = String(r[10] || ''), ap = String(r[8] || '').trim(), sol = String(r[6] || '').trim();
+    if (resultado.indexOf('sin autorización') !== -1) {
+      if (ap && ap.toUpperCase() !== 'NULL' && ap.indexOf('@') !== -1) out.noAutorizados++;
+      else out.datosIncompletos++;
+    } else if (resultado.indexOf('duplicidad') !== -1 && ap && sol && ap.toLowerCase() === sol.toLowerCase()) {
+      out.autoAprobaciones++;
+    }
+  });
+  return out;
 }
 
 // Reporte final = sábana consolidada con EXACTAMENTE 2 tablas (feedback jefa):
@@ -1178,7 +1197,7 @@ function obtenerCarpetaDestino_() {
 
 /* ==================== 12. CENTRO OPERATIVO / DASHBOARD =============== */
 // Registra cada cierre de lote para mantener trazabilidad operativa.
-function registrarEjecucion_(panel, pendientes, correos) {
+function registrarEjecucion_(panel, pendientes, correos, periodo) {
   var hoja = hojaPorNombre_(panel, CONFIG.HOJA_HISTORIAL);
   if (!hoja) {
     hoja = panel.insertSheet(CONFIG.HOJA_HISTORIAL);
@@ -1187,9 +1206,10 @@ function registrarEjecucion_(panel, pendientes, correos) {
       .setFontWeight('bold').setBackground('#1B0A5A').setFontColor('#ffffff');
     hoja.setFrozenRows(1);
   }
+  if (hoja.getLastColumn() < 6) hoja.getRange(1, 6).setValue('Período').setFontWeight('bold').setBackground('#1B0A5A').setFontColor('#ffffff');
   var user = '';
   try { user = Session.getActiveUser().getEmail() || ''; } catch (_) {}
-  hoja.appendRow([new Date(), user, pendientes || 0, correos || 0, 'Completado']);
+  hoja.appendRow([new Date(), user, pendientes || 0, correos || 0, 'Completado', String(periodo || '')]);
   hoja.getRange(hoja.getLastRow(), 1).setNumberFormat('yyyy-mm-dd hh:mm');
 }
 
@@ -1198,7 +1218,7 @@ function claveCaso_(email, rateId) {
 }
 
 // Fuente única para el dashboard administrativo. Lee las hojas existentes; no duplica datos.
-function obtenerDashboardSOX() {
+function obtenerDashboardSOX(periodoFiltro) {
   if (!esAdminActual_()) return { ok: false, mensaje: 'Solo los administradores SOX pueden ver este tablero.' };
 
   var panel = obtenerPanel_();
@@ -1220,14 +1240,26 @@ function obtenerDashboardSOX() {
 
   if (resumen && resumen.getLastRow() > 1) {
     var d = resumen.getRange(2, 1, resumen.getLastRow() - 1, resumen.getLastColumn()).getDisplayValues();
+    d.forEach(function (r) {
+      var pFila = String(r[12] || 'Período actual').trim() || 'Período actual';
+      periodos[pFila] = true;
+    });
+    function valorPeriodo(p) {
+      var m = String(p).match(/^Q([1-4])\s+(\d{4})$/);
+      return m ? (+m[2] * 10 + +m[1]) : 0;
+    }
+    var listaPeriodos = Object.keys(periodos).sort(function (a, b) { return valorPeriodo(b) - valorPeriodo(a); });
+    var periodoActivo = String(periodoFiltro || periodoOperativoActual_());
+    if (!periodos[periodoActivo]) periodoActivo = listaPeriodos[0] || periodoActivo;
     d.forEach(function (r, idx) {
+      var periodo = String(r[12] || 'Período actual').trim() || 'Período actual';
+      if (periodo !== periodoActivo) return;
       var resultado = String(r[10] || '');
       var ap = String(r[8] || '').trim(), sol = String(r[6] || '').trim();
       if (!ap || ap.toUpperCase() === 'NULL') ap = '';
       if (!sol || sol.toUpperCase() === 'NULL') sol = '';
       var categoria = resultado.indexOf('sin autorización') !== -1 ? (ap.indexOf('@') !== -1 ? 'Aprobador no autorizado' : 'Dato incompleto') :
         (resultado.indexOf('duplicidad') !== -1 && ap && sol && ap.toLowerCase() === sol.toLowerCase() ? 'Autoaprobación' : 'Otro');
-      var periodo = String(r[12] || 'Período actual').trim() || 'Período actual';
       var keyAp = claveCaso_(ap, r[1]), keySol = claveCaso_(sol, r[1]);
       var justificador = estados[keyAp] ? ap : (estados[keySol] ? sol : '');
       var estado = estados[keyAp] || estados[keySol] || 'Pendiente de usuario';
@@ -1254,7 +1286,6 @@ function obtenerDashboardSOX() {
       if (sol.indexOf('@') !== -1) personas[sol.toLowerCase()] = true;
       if (r[0]) tipos[r[0]] = true;
       if (r[4]) zonas[r[4]] = true;
-      periodos[periodo] = true;
 
       var mapa = categoria === 'Aprobador no autorizado' ? noAut : (categoria === 'Autoaprobación' ? consistencia : null);
       if (mapa) {
@@ -1284,6 +1315,13 @@ function obtenerDashboardSOX() {
     try { ultimaEjecucion = Utilities.formatDate(DriveApp.getFileById(panel.getId()).getLastUpdated(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'); } catch (_) {}
   }
 
+  var periodosOrdenados = Object.keys(periodos).sort(function (a, b) {
+    var ma = String(a).match(/^Q([1-4])\s+(\d{4})$/), mb = String(b).match(/^Q([1-4])\s+(\d{4})$/);
+    var va = ma ? (+ma[2] * 10 + +ma[1]) : 0, vb = mb ? (+mb[2] * 10 + +mb[1]) : 0;
+    return vb - va;
+  });
+  var activoFinal = String(periodoFiltro || periodoOperativoActual_());
+  if (!periodos[activoFinal]) activoFinal = periodosOrdenados[0] || activoFinal;
   return {
     ok: true,
     actualizado: ultimaEjecucion,
@@ -1291,8 +1329,9 @@ function obtenerDashboardSOX() {
     panelUrl: panel.getUrl(),
     carpetaUrl: obtenerCarpetaDestino_().getUrl(),
     metricas: metricas,
+    periodoActivo: activoFinal,
     personas: Object.keys(personas).length,
-    filtros: { tipos: Object.keys(tipos).sort(), zonas: Object.keys(zonas).sort(), periodos: Object.keys(periodos).sort().reverse() },
+    filtros: { tipos: Object.keys(tipos).sort(), zonas: Object.keys(zonas).sort(), periodos: periodosOrdenados },
     noAutorizados: tabla(noAut),
     consistencia: tabla(consistencia),
     casos: casos,
