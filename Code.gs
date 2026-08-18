@@ -11,14 +11,14 @@
  *      · Consistencia (aprobador ≠ solicitante)
  *      · Aprobador / Solicitante en la matriz de permisos (+ su Rol y Región)
  *      · Zona/País de origen desde "diccionario postas"
- *      · Campos NULL críticos y alcance (Nature of Spot para Spot/Street)
+ *      · Campos NULL críticos y alcance (Nature of Spot solo para Spot Rate)
  *  - Consolida las inconsistencias en "Resumen SOX" y reporta TIEMPOS.
  * ============================================================================
  */
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
-  APP_VERSION: '2026.08.18.10',
+  APP_VERSION: '2026.08.18.11',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -864,6 +864,9 @@ function aplicarValidacionesSOX_(hoja, matriz, claveTipo, permisos, dicc, tipoLa
   var nombreFechaEsperada = claveTipo === 'SPOT' ? 'Approved Date'
     : ((claveTipo === 'PROMO' || claveTipo === 'CONTRACT') ? 'Last Modified Date' : 'Created Date');
   var rango = (CONFIG.FILTRAR_POR_PERIODO ? rangoPeriodo_(periodo) : null);
+  if (claveTipo === 'SPOT' && !colNat) {
+    throw new Error('No se encontró la columna Nature of Spot en Spot. No se procesó el archivo porque falta el filtro de los ocho tipos auditables.');
+  }
   if (rango && !colFecha) {
     throw new Error('No se encontró la columna ' + nombreFechaEsperada + ' en ' + tipoLabel + '. No se procesó el archivo para evitar mezclar períodos.');
   }
@@ -1059,7 +1062,9 @@ function escribirAnalisis_(ss, tipoLabel, tot, apStats, consStats) {
 }
 
 function enAlcance_(claveTipo, valorNaturaleza) {
-  if (claveTipo === 'PROMO' || claveTipo === 'CONTRACT') return true;
+  // El instructivo limita los ocho valores de Nature exclusivamente a Spot Rate.
+  // Promo, Contract y Street/Strip no deben descartarse por esta columna.
+  if (claveTipo !== 'SPOT') return true;
   if (!valorNaturaleza) return false;
   return CONFIG.SPOT_EN_ALCANCE.indexOf(String(valorNaturaleza).trim().toUpperCase()) !== -1;
 }

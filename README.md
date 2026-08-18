@@ -23,7 +23,8 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - El correo trimestral usa una plantilla corporativa con asunto de acción requerida, resumen ejecutivo, instrucciones, indicadores, detalle priorizado y accesos al portal, al reporte y al repositorio.
 - La vista previa puede abrirse en una ventana completa y el envío queda visualmente bloqueado cuando no existen destinatarios configurados.
 - El tablero distingue explícitamente entre **registros** y **personas únicas**. Las tablas agrupadas muestran su suma de comprobación y cada persona abre sus registros exactos en la revisión detallada.
-- El alcance usa una fecha distinta según el archivo: Spot Rate=`Approved Date`; Promo/Contract=`Last Modified Date`; Street/Strip=`Created Date`. Spot conserva además los ocho valores autorizados de `Nature of Spot`.
+- El alcance usa una fecha distinta según el archivo: Spot Rate=`Approved Date`; Promo/Contract=`Last Modified Date`; Street/Strip=`Created Date`.
+- El filtro de los ocho valores autorizados de `Nature of Spot` se aplica **exclusivamente a Spot Rate**. Promo, Contract y Street/Strip no se excluyen por ese campo.
 - Las pruebas de aprobador autorizado y duplicidad de roles son independientes: una tarifa que falla ambas genera dos hallazgos identificables con el mismo Rate ID.
 - Los archivos que no contienen las columnas de fecha obligatorias se bloquean para evitar resultados silenciosamente contaminados. Después de procesar, la app muestra filas leídas, en alcance y descartadas por período, fecha o naturaleza.
 
