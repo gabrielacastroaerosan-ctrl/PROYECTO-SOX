@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root{--indigo:#1B0A5A;--coral:#ED1650;--coral-d:#c70f40;--ink:#1a1a2e;--muted:#6b6b83;--line:#e7e7f0;--bg:#f4f4fa;--ok:#1a8f4c;--err:#c5221f;}
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:'Montserrat',Arial,sans-serif;background:var(--bg);color:var(--ink);}
+      .topbar{background:linear-gradient(110deg,#13064b,var(--indigo));color:#fff;padding:20px 28px;display:flex;align-items:center;gap:18px;box-shadow:0 5px 20px rgba(27,10,90,.16);}
+      .logo{font-weight:800;font-size:26px;letter-spacing:2px;position:relative;padding-right:14px;}
+      .logo::after{content:"";position:absolute;right:0;top:6px;bottom:6px;width:3px;background:var(--coral);border-radius:2px;}
+      .topbar h1{font-size:18px;font-weight:700;}
+      .topbar p{font-size:12px;font-weight:500;opacity:.85;margin-top:2px;}
+      .wrap{max-width:860px;margin:0 auto;padding:26px 20px 60px;}
+      .hola{font-size:14px;color:var(--muted);margin-bottom:4px;}
+      .hola b{color:var(--indigo);}
+      h2{font-size:22px;font-weight:800;color:var(--indigo);margin-bottom:16px;}
+      h2 span{color:var(--coral);}
+      .empty{background:#f1f8f2;border:1px solid #cfe9d4;color:var(--ok);padding:20px;border-radius:14px;font-weight:600;}
+      .loading{color:var(--indigo);font-weight:600;padding:20px;}
+      .spin{display:inline-block;width:15px;height:15px;margin-right:8px;border:2px solid #cfd0ef;border-top-color:var(--indigo);border-radius:50%;animation:g .8s linear infinite;vertical-align:middle;}
+      @keyframes g{to{transform:rotate(360deg);}}
+      .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;margin-bottom:14px;box-shadow:0 4px 16px rgba(27,10,90,.05);}
+      .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+      .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.5px;}
+      .tag.na{background:#fdecec;color:var(--err);}
+      .tag.con{background:#fff2e0;color:#b8620a;}
+      .meta{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.6;}
+      .meta b{color:var(--ink);}
+      .estado{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:#eef0ff;color:var(--indigo);white-space:nowrap;}
+      .estado.done{background:#f1f8f2;color:var(--ok);}
+      .form{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;display:none;}
+      .form.on{display:block;}
+      textarea,input[type=text]{width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:10px;padding:10px;margin-top:6px;}
+      textarea{min-height:70px;resize:vertical;}
+      label{font-size:12px;font-weight:600;color:var(--muted);}
+      .btns{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;}
+      .btn{font-family:inherit;font-weight:700;font-size:13px;padding:10px 18px;border-radius:999px;border:none;cursor:pointer;transition:background-color .2s,transform .08s;}
+      .btn:active{transform:translateY(1px);}
+      .btn-primary{background:var(--coral);color:#fff;} .btn-primary:hover{background:var(--coral-d);}
+      .btn-ghost{background:#fff;color:var(--indigo);border:1.5px solid var(--indigo);}
+      .msg{font-size:12px;margin-top:8px;font-weight:600;}
+      .msg.ok{color:var(--ok);} .msg.err{color:var(--err);}
+      .footer{text-align:center;color:var(--muted);font-size:12px;margin-top:30px;}
+      .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;}
+      .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px;box-shadow:0 3px 12px rgba(27,10,90,.04);}
+      .kpi small{display:block;color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}
+      .kpi b{display:block;color:var(--indigo);font-size:24px;margin-top:6px;}
+      .tools{display:flex;gap:10px;margin:0 0 14px;}
+      select{font-family:inherit;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;color:var(--ink);font-size:12px;}
+      .notice{background:#eef0ff;border:1px solid #d7d9f2;color:var(--indigo);padding:13px 15px;border-radius:12px;font-size:12px;line-height:1.6;margin-bottom:14px;}
+      @media(max-width:620px){.summary{grid-template-columns:1fr}.topbar{padding:17px}.topbar h1{font-size:15px}.wrap{padding:20px 14px 45px}.tools{flex-direction:column}select{width:100%}}
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="logo">LATAM</div>
+      <div><h1>Control SOX de Tarifas — Portal</h1><p>Revisa y justifica tus casos pendientes</p></div>
+    </header>
+    <div class="wrap">
+      <div class="hola" id="hola">Cargando tu información…</div>
+      <h2>Mis casos <span>pendientes</span></h2>
+      <div class="summary" id="summary"></div>
+      <div class="tools" id="tools" style="display:none"><select id="tipoFiltro"><option value="">Todos los hallazgos</option><option value="na">Aprobación no autorizada</option><option value="con">Solicitó y aprobó</option></select><select id="periodoFiltro"><option value="">Todos los períodos</option></select></div>
+      <div id="cont"><div class="loading"><span class="spin"></span> Buscando tus casos…</div></div>
+      <div class="footer">Si crees que hay un error, contacta al equipo de Control SOX.</div>
+    </div>
+
+    <script>
+      function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+      var portalData=null;
+      document.getElementById('tipoFiltro').onchange=renderCasos;
+      document.getElementById('periodoFiltro').onchange=renderCasos;
+      google.script.run.withSuccessHandler(pintar).withFailureHandler(function(e){
+        document.getElementById('cont').innerHTML='<div class="empty" style="background:#fdecec;color:#c5221f;border-color:#f5c2c0">No pudimos cargar tus casos. Asegúrate de entrar con tu cuenta LATAM. ('+(e&&e.message||'')+')</div>';
+      }).getMisCasos();
+
+      function pintar(data){
+        portalData=data;
+        var hola=document.getElementById('hola');
+        hola.innerHTML='Sesión: <b>'+esc(data.email||'(desconocido)')+'</b>';
+        if(!data.casos||!data.casos.length){
+          document.getElementById('summary').innerHTML='<div class="kpi"><small>Casos pendientes</small><b>0</b></div>';
+          document.getElementById('cont').innerHTML='<div class="empty">No tienes casos pendientes. Todo está en orden.</div>';
+          return;
+        }
+        var na=data.casos.filter(function(c){return String(c.resultado).indexOf('sin autorización')!==-1}).length;
+        var co=data.casos.filter(function(c){return String(c.resultado).indexOf('duplicidad')!==-1}).length;
+        document.getElementById('summary').innerHTML='<div class="kpi"><small>Total asignado</small><b>'+data.casos.length+'</b></div><div class="kpi"><small>No autorizado</small><b>'+na+'</b></div><div class="kpi"><small>Consistencia</small><b>'+co+'</b></div>';
+        var periodos={};data.casos.forEach(function(c){periodos[c.periodo||'Período actual']=true});
+        document.getElementById('periodoFiltro').innerHTML='<option value="">Todos los períodos</option>'+Object.keys(periodos).map(function(p){return'<option>'+esc(p)+'</option>'}).join('');
+        document.getElementById('tools').style.display='flex';
+        renderCasos();
+      }
+
+      function renderCasos(){
+        if(!portalData||!portalData.casos)return;
+        var tipo=document.getElementById('tipoFiltro').value,periodo=document.getElementById('periodoFiltro').value;
+        var casos=portalData.casos.filter(function(c){var esCons=String(c.resultado).indexOf('duplicidad')!==-1;return(!tipo||(tipo==='con')===esCons)&&(!periodo||(c.periodo||'Período actual')===periodo)});
+        var cont=document.getElementById('cont');
+        var html='<div class="notice">Revisa únicamente los casos asignados a ti. Adjunta el enlace del correo o aprobación del director; la evidencia quedará trazable para la auditoría.</div>';
+        if(!casos.length){cont.innerHTML=html+'<div class="empty">No hay casos para estos filtros.</div>';return;}
+        casos.forEach(function(c,i){
+          var esCons = String(c.resultado).indexOf('duplicidad')!==-1;
+          var tag = esCons ? '<span class="tag con">Solicitó y aprobó</span>' : '<span class="tag na">Aprobación no autorizada</span>';
+          var est = portalData.enviados[String(c.rateId)];
+          var estHtml = est ? '<span class="estado done">'+esc(est)+'</span>' : '<span class="estado">Pendiente</span>';
+          html+='<div class="card">'+
+            '<div class="row1"><div>'+tag+'<div class="meta"><b>'+esc(c.tipo)+'</b> · Rate Id <b>'+esc(c.rateId)+'</b><br>'+
+            esc(c.origen)+' → '+esc(c.destino)+' · Zona '+esc(c.zona||'-')+' · '+esc(c.periodo||'Período actual')+'<br>'+esc(c.resultado)+'</div></div>'+estHtml+'</div>'+
+            (est ? '' :
+            '<div class="form" id="f'+i+'">'+
+              '<label>Nota o justificación (opcional)</label><textarea id="t'+i+'" placeholder="Opcional: escribe una nota. La justificación formal la das respondiendo el correo original."></textarea>'+
+              '<label>Link de evidencia</label><input type="text" id="e'+i+'" placeholder="Enlace del correo o aprobación del director">'+
+              '<div class="btns"><button class="btn btn-primary" id="s'+i+'">Confirmar caso revisado</button></div>'+
+              '<div class="msg" id="m'+i+'"></div>'+
+            '</div>'+
+            '<div class="btns" id="b'+i+'"><button class="btn btn-ghost" data-i="'+i+'">Revisar y confirmar</button></div>')+
+          '</div>';
+        });
+        cont.innerHTML=html;
+
+        casos.forEach(function(c,i){
+          var toggle=document.querySelector('#b'+i+' button');
+          if(toggle) toggle.onclick=function(){ document.getElementById('f'+i).classList.add('on'); document.getElementById('b'+i).style.display='none'; };
+          var send=document.getElementById('s'+i);
+          if(send) send.onclick=function(){ enviar(i,c); };
+        });
+      }
+
+      function enviar(i,c){
+        var texto=document.getElementById('t'+i).value.trim();
+        var evid=document.getElementById('e'+i).value.trim();
+        var msg=document.getElementById('m'+i);
+        if(!texto && !evid){msg.className='msg err';msg.textContent='Agrega una nota o un enlace de evidencia antes de confirmar.';return;}
+        var btn=document.getElementById('s'+i); btn.disabled=true; btn.textContent='Enviando…';
+        google.script.run.withSuccessHandler(function(res){
+          if(res&&res.ok){ msg.className='msg ok'; msg.textContent='✅ ¡Registrado! Recuerda dar la justificación formal respondiendo el correo original.';
+            document.getElementById('t'+i).disabled=true; document.getElementById('e'+i).disabled=true; btn.style.display='none'; }
+          else { msg.className='msg err'; msg.textContent='❌ '+((res&&res.mensaje)||'Error'); btn.disabled=false; btn.textContent='Confirmar caso revisado'; }
+        }).withFailureHandler(function(e){ msg.className='msg err'; msg.textContent='❌ '+(e&&e.message||'Error'); btn.disabled=false; btn.textContent='Confirmar caso revisado'; })
+          .enviarJustificacion({tipo:c.tipo, rateId:String(c.rateId), texto:texto, evidencia:evid});
+      }
+    </script>
+  </body>
+</html>
