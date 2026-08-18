@@ -167,6 +167,47 @@ function esAdminActual_() {
   try { u = String(Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (_) {}
   return CONFIG.ADMINS.map(function (x) { return String(x).toLowerCase(); }).indexOf(u) !== -1;
 }
+
+// Reinicio controlado para pruebas. Nunca elimina la carpeta raíz ni las hojas
+// de referencia (Permisos, diccionario y Justificados). Las carpetas generadas
+// se envían a la papelera de Drive, por lo que pueden recuperarse.
+function reiniciarDatosPruebaSOX(confirmacion) {
+  if (!esAdminActual_()) return { ok: false, mensaje: 'Solo los administradores pueden reiniciar datos.' };
+  if (String(confirmacion || '') !== 'REINICIAR') return { ok: false, mensaje: 'Confirmación incorrecta. No se modificó nada.' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (_) { return { ok: false, mensaje: 'Hay otro proceso en curso. Intenta nuevamente.' }; }
+  try {
+    var raiz = obtenerCarpetaDestino_(), carpetas = 0, archivos = 0;
+    var itC = raiz.getFolders();
+    while (itC.hasNext()) {
+      var carpeta = itC.next(), nombre = carpeta.getName();
+      if (/^Q[1-4]\s+\d{4}$/i.test(nombre) || nombre === 'Sin periodo') {
+        carpeta.setTrashed(true); carpetas++;
+      }
+    }
+    var itF = raiz.getFiles();
+    while (itF.hasNext()) {
+      var archivo = itF.next();
+      if (String(archivo.getName()).indexOf(CONFIG.PREFIJO_REPORTE_ENVIO) === 0) {
+        archivo.setTrashed(true); archivos++;
+      }
+    }
+
+    var panel = obtenerPanel_();
+    limpiarResumen_(panel); limpiarCorreos_(panel);
+    [CONFIG.HOJA_REPORTE, CONFIG.HOJA_HISTORIAL, CONFIG.HOJA_HISTORIAL_COMUNICACIONES, CONFIG.HOJA_JUSTIFICACIONES]
+      .forEach(function (nombreHoja) {
+        var sh = hojaPorNombre_(panel, nombreHoja);
+        if (sh && panel.getSheets().length > 1) panel.deleteSheet(sh);
+      });
+    prepararHojaJustificaciones_(panel);
+    SpreadsheetApp.flush();
+    return { ok: true, carpetasPapelera: carpetas, archivosPapelera: archivos,
+      mensaje: 'Datos de prueba reiniciados. La matriz, el diccionario y los justificados se conservaron.' };
+  } catch (e) {
+    return { ok: false, mensaje: 'No se pudo completar el reinicio: ' + e.message };
+  } finally { try { lock.releaseLock(); } catch (_) {} }
+}
 function urlApp_() {
   try { return ScriptApp.getService().getUrl() || ''; } catch (_) { return ''; }
 }

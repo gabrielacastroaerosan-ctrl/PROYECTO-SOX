@@ -14,6 +14,7 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Recordatorio general mensual a los focals, programado para el día 15 y referido al último mes cerrado.
 - Portal de usuario con resumen, filtros y captura de nota o evidencia.
 - Flujo guiado de cinco pasos que indica la siguiente acción del período.
+- Indicador de conexión con animación y segundos transcurridos mientras se consultan Sheets y Drive.
 - Explorador de solo lectura para consultar las carpetas y archivos del repositorio SOX en Drive desde la app.
 - Se conserva la actualización del Google Sheet maestro y la organización de archivos en Drive.
 
@@ -49,6 +50,10 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Al reprocesar, se reemplaza el consolidado de ese trimestre y se conservan los demás períodos históricos.
 - Dentro de la carpeta trimestral, un archivo nuevo con el mismo nombre reemplaza la versión anterior, que se envía a la papelera. Los archivos con nombres diferentes se conservan.
 - Por esta razón debe cargarse el paquete completo del trimestre en una misma ejecución.
+
+## Reinicio para pruebas
+
+En **Configuración → Zona de pruebas** los administradores pueden reiniciar los datos operativos escribiendo `REINICIAR`. La acción limpia resultados, evidencias e historiales y envía las carpetas trimestrales a la papelera. No elimina la carpeta raíz ni modifica `Permisos`, `diccionario postas`, `Justificados` o la configuración del proyecto.
 
 ## Nota de compatibilidad
 
