@@ -18,7 +18,7 @@
 
 /* ========================== 1. CONFIGURACIÓN ============================== */
 var CONFIG = {
-  APP_VERSION: '2026.08.18.6',
+  APP_VERSION: '2026.08.18.7',
   // Sheet "cerebro" (donde están Permisos y diccionario postas).
   PANEL_SS_ID: '1URq-lB8S0tOVA1tArK66Jy6geb_SUP5GwdrpRqS-lUw',
   // Carpeta de Drive donde se crean las subcarpetas por trimestre.
@@ -324,6 +324,8 @@ function resumenPeriodoCorreo_(dashboard, periodo) {
     total: casos.length,
     noAutorizados: casos.filter(function (c) { return c.categoria === 'Aprobador no autorizado'; }).length,
     autoAprobaciones: casos.filter(function (c) { return c.categoria === 'Autoaprobación'; }).length,
+    personasNoAutorizadas: Object.keys(noAut).length,
+    personasAutoAprobacion: Object.keys(auto).length,
     topNoAutorizados: top(noAut), topAutoAprobaciones: top(auto)
   };
 }
@@ -335,27 +337,42 @@ function escapeHtml_(v) {
 }
 
 function correoGeneralTrimestralHTML_(periodo, resumen, reporteUrl, portalUrl, carpetaUrl) {
-  function filas(items) {
-    if (!items.length) return '<tr><td colspan="2" style="padding:10px;color:#16864b">Sin registros</td></tr>';
-    return items.map(function (x) { return '<tr><td style="padding:8px;border-bottom:1px solid #eee">' + escapeHtml_(x.persona) +
-      '</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">' + x.registros + '</td></tr>'; }).join('');
+  function fmt(n) { return Number(n || 0).toLocaleString('es-CO'); }
+  function filas(items, totalCategoria) {
+    if (!items.length) return '<tr><td colspan="3" style="padding:14px;color:#16864b;text-align:center">Sin registros para este control</td></tr>';
+    return items.map(function (x, i) {
+      var pct = totalCategoria ? Math.round(x.registros * 100 / totalCategoria) : 0;
+      return '<tr><td style="width:28px;padding:10px 7px;border-bottom:1px solid #ecebf3;color:#8a8797">' + (i + 1) + '</td>' +
+        '<td style="padding:10px 7px;border-bottom:1px solid #ecebf3;color:#17123f;word-break:break-word">' + escapeHtml_(x.persona) + '</td>' +
+        '<td style="width:92px;padding:10px 7px;border-bottom:1px solid #ecebf3;text-align:right"><b style="color:#17123f">' + fmt(x.registros) +
+        '</b><span style="display:block;color:#8a8797;font-size:10px">' + pct + '% del control</span></td></tr>';
+    }).join('');
   }
-  return '<div style="font-family:Arial,sans-serif;background:#f4f4fa;padding:24px;color:#202033">' +
-    '<div style="max-width:720px;margin:auto;background:#fff;border:1px solid #e6e5ef;border-radius:14px;overflow:hidden">' +
-    '<div style="background:#0f004f;color:#fff;padding:22px 26px"><b style="font-size:22px;letter-spacing:1px">LATAM</b>' +
-    '<div style="margin-top:7px;font-size:15px;font-weight:700">Control SOX de Tarifas - ' + escapeHtml_(periodo) + '</div></div>' +
-    '<div style="padding:25px"><p>Hola equipo,</p><p style="line-height:1.6">Finalizamos el procesamiento trimestral. Se identificaron <b>' + resumen.total +
-    ' registros críticos</b> en la sábana consolidada. Este es el único correo general del período; cada usuario podrá ingresar al portal y visualizar únicamente los registros asociados a su cuenta.</p>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:20px 0"><div style="background:#feecef;padding:12px 16px;border-radius:9px"><b>' + resumen.noAutorizados +
-    '</b><br><span style="font-size:12px">Aprobadores no autorizados</span></div><div style="background:#fff3df;padding:12px 16px;border-radius:9px"><b>' + resumen.autoAprobaciones +
-    '</b><br><span style="font-size:12px">Autoaprobaciones</span></div></div>' +
-    '<h3 style="color:#0f004f;font-size:14px">1. Aprobadores no autorizados</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topNoAutorizados) + '</table>' +
-    '<h3 style="color:#0f004f;font-size:14px;margin-top:20px">2. Prueba de consistencia</h3><table style="width:100%;border-collapse:collapse;font-size:12px">' + filas(resumen.topAutoAprobaciones) + '</table>' +
-    '<div style="margin-top:24px"><a href="' + escapeHtml_(portalUrl) + '" style="display:inline-block;background:#ed1650;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Consultar mis registros</a></div>' +
-    '<p style="font-size:12px;line-height:1.7;color:#666;margin-top:20px">Reporte trimestral consolidado: ' +
-    (reporteUrl ? '<a href="' + escapeHtml_(reporteUrl) + '">abrir Sheet</a>' : '<b>pendiente de generar</b>') +
-    '<br>Repositorio de evidencias: <a href="' + escapeHtml_(carpetaUrl) + '">abrir Drive</a></p>' +
-    '<p style="font-size:12px;color:#666">Las justificaciones deben incluir la cadena de correos y, cuando corresponda, la aprobación de un jefe o director.</p></div></div></div>';
+  var periodoSeguro = escapeHtml_(periodo), total = Number(resumen.total || 0);
+  var pctNoAut = total ? Math.round(Number(resumen.noAutorizados || 0) * 100 / total) : 0;
+  var pctAuto = total ? Math.round(Number(resumen.autoAprobaciones || 0) * 100 / total) : 0;
+  var linkReporte = reporteUrl ? '<a href="' + escapeHtml_(reporteUrl) + '" style="color:#3425a7;font-weight:700;text-decoration:none">Abrir reporte consolidado →</a>' : '<span style="color:#a75c00;font-weight:700">Se generará al confirmar el envío</span>';
+  return '<!doctype html><html><body style="margin:0;padding:0;background:#f2f3f8;font-family:Arial,Helvetica,sans-serif;color:#211b49">' +
+    '<div style="display:none;max-height:0;overflow:hidden;opacity:0">Resultados del control SOX ' + periodoSeguro + ': ' + fmt(total) + ' registros requieren revisión.</div>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f8"><tr><td align="center" style="padding:28px 12px">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:720px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(18,8,70,.10)">' +
+    '<tr><td style="background:#110052;padding:24px 30px;color:#ffffff"><table role="presentation" width="100%"><tr><td><b style="font-size:25px;letter-spacing:.4px">LATAM<span style="color:#ed1650">+</span></b><div style="margin-top:5px;font-size:10px;letter-spacing:1.4px;color:#c8c3e3">SOX CONTROL CENTER</div></td><td align="right"><span style="display:inline-block;background:#32227e;border:1px solid #5b4ca0;border-radius:999px;padding:8px 12px;font-size:11px;font-weight:700">' + periodoSeguro + '</span></td></tr></table></td></tr>' +
+    '<tr><td style="padding:32px 30px 20px"><div style="color:#ed1650;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase">Resultados trimestrales · Acción requerida</div>' +
+    '<h1 style="margin:9px 0 12px;color:#110052;font-size:27px;line-height:1.2">Control SOX de Tarifas</h1>' +
+    '<p style="margin:0;color:#5e5972;font-size:14px;line-height:1.7">Hola equipo,<br>Finalizamos el análisis de <b>' + periodoSeguro + '</b>. El consolidado identificó <b>' + fmt(total) + ' registros</b> que requieren revisión. Este es el único correo general del período; al ingresar al portal cada persona verá solamente los casos asociados a su cuenta.</p></td></tr>' +
+    '<tr><td style="padding:4px 30px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    '<td width="32%" valign="top" style="background:#f3f1ff;border-radius:12px;padding:16px"><span style="color:#6d6880;font-size:10px;font-weight:700;text-transform:uppercase">Registros para envío</span><b style="display:block;margin-top:7px;color:#110052;font-size:27px">' + fmt(total) + '</b></td><td width="2%"></td>' +
+    '<td width="32%" valign="top" style="background:#fff0f3;border-radius:12px;padding:16px"><span style="color:#9a314a;font-size:10px;font-weight:700;text-transform:uppercase">No autorizados</span><b style="display:block;margin-top:7px;color:#c71043;font-size:27px">' + fmt(resumen.noAutorizados) + '</b><small style="color:#8a5662">' + pctNoAut + '% · ' + fmt(resumen.personasNoAutorizadas) + ' persona(s)</small></td><td width="2%"></td>' +
+    '<td width="32%" valign="top" style="background:#fff6e8;border-radius:12px;padding:16px"><span style="color:#8a5c0b;font-size:10px;font-weight:700;text-transform:uppercase">Autoaprobaciones</span><b style="display:block;margin-top:7px;color:#b87500;font-size:27px">' + fmt(resumen.autoAprobaciones) + '</b><small style="color:#8a6b35">' + pctAuto + '% · ' + fmt(resumen.personasAutoAprobacion) + ' persona(s)</small></td></tr></table></td></tr>' +
+    '<tr><td style="padding:0 30px 26px"><table role="presentation" width="100%" style="background:#f7f7fb;border:1px solid #e5e3ef;border-radius:13px"><tr><td style="padding:20px"><b style="color:#110052;font-size:15px">¿Qué necesitas hacer?</b>' +
+    '<table role="presentation" width="100%" style="margin-top:12px"><tr><td valign="top" style="width:27px;color:#ed1650;font-weight:800">1.</td><td style="padding-bottom:9px;color:#565168;font-size:13px;line-height:1.5">Ingresa al portal con tu cuenta corporativa.</td></tr><tr><td valign="top" style="color:#ed1650;font-weight:800">2.</td><td style="padding-bottom:9px;color:#565168;font-size:13px;line-height:1.5">Revisa los registros asociados a tu usuario y valida el resultado.</td></tr><tr><td valign="top" style="color:#ed1650;font-weight:800">3.</td><td style="color:#565168;font-size:13px;line-height:1.5">Adjunta la evidencia o justificación. Incluye la cadena de correos y, cuando aplique, la aprobación del jefe o director.</td></tr></table>' +
+    '<div style="margin-top:18px"><a href="' + escapeHtml_(portalUrl) + '" style="display:inline-block;background:#ed1650;color:#ffffff;text-decoration:none;font-size:13px;font-weight:800;padding:13px 22px;border-radius:9px">Revisar mis registros</a></div></td></tr></table></td></tr>' +
+    '<tr><td style="padding:0 30px 12px"><h2 style="margin:0 0 5px;color:#110052;font-size:18px">Detalle ejecutivo</h2><p style="margin:0;color:#7d788d;font-size:11px">Se muestran las 10 personas con mayor volumen por cada control. El reporte contiene el detalle completo.</p></td></tr>' +
+    '<tr><td style="padding:12px 30px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e6ef;border-radius:12px;overflow:hidden"><tr><td style="padding:14px 16px;background:#fff0f3"><b style="color:#9d1238;font-size:14px">1. Aprobadores no autorizados</b><span style="float:right;color:#9d1238;font-size:12px;font-weight:700">' + fmt(resumen.noAutorizados) + ' registros</span></td></tr><tr><td style="padding:0 10px"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;border-collapse:collapse">' + filas(resumen.topNoAutorizados, resumen.noAutorizados) + '</table></td></tr></table></td></tr>' +
+    '<tr><td style="padding:4px 30px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e6ef;border-radius:12px;overflow:hidden"><tr><td style="padding:14px 16px;background:#fff6e8"><b style="color:#855600;font-size:14px">2. Prueba de consistencia</b><span style="float:right;color:#855600;font-size:12px;font-weight:700">' + fmt(resumen.autoAprobaciones) + ' registros</span></td></tr><tr><td style="padding:0 10px"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;border-collapse:collapse">' + filas(resumen.topAutoAprobaciones, resumen.autoAprobaciones) + '</table></td></tr></table></td></tr>' +
+    '<tr><td style="padding:0 30px 30px"><table role="presentation" width="100%" style="background:#f3f1ff;border-radius:12px"><tr><td style="padding:17px;color:#514b68;font-size:12px;line-height:1.8"><b style="color:#110052">Recursos del período</b><br>' + linkReporte + '<br><a href="' + escapeHtml_(carpetaUrl) + '" style="color:#3425a7;font-weight:700;text-decoration:none">Abrir repositorio de evidencias →</a></td></tr></table></td></tr>' +
+    '<tr><td style="background:#110052;padding:20px 30px;color:#c9c5df;font-size:10px;line-height:1.6">Uso interno · Control y seguimiento SOX<br>Mensaje generado por SOX Control Center. No respondas con evidencias a este correo; regístralas directamente en el portal.</td></tr>' +
+    '</table></td></tr></table></body></html>';
 }
 
 function previewCorreoGeneralTrimestral(periodo) {
@@ -366,7 +383,7 @@ function previewCorreoGeneralTrimestral(periodo) {
   var resumen = resumenPeriodoCorreo_(d, p), destinatarios = destinatariosReporte_();
   var reporte = obtenerReporteEnvioExistente_(p);
   var portalUrl = urlApp_() + '?view=portal';
-  var asunto = 'Control SOX de Tarifas - Resultados ' + p + ' y solicitud de evidencias';
+  var asunto = '[Acción requerida] Control SOX de Tarifas · ' + p;
   return { ok: true, periodo: p, asunto: asunto, destinatarios: destinatarios, resumen: resumen,
     reporteGenerado: !!reporte, reporteUrl: reporte ? reporte.getUrl() : '',
     html: correoGeneralTrimestralHTML_(p, resumen, reporte ? reporte.getUrl() : '', portalUrl, d.carpetaUrl) };
@@ -402,7 +419,9 @@ function enviarCorreoGeneralTrimestral(periodo) {
     var html = correoGeneralTrimestralHTML_(prev.periodo, prev.resumen, reporte.url, urlApp_() + '?view=portal', obtenerCarpetaDestino_().getUrl());
     var opcionesCorreo = {
       to: prev.destinatarios.join(','), subject: prev.asunto,
-      body: 'Resultados del control SOX ' + prev.periodo + '. Consulte el portal para revisar los registros asociados a su cuenta.',
+      body: 'Acción requerida - Control SOX de Tarifas ' + prev.periodo + '\n\n' +
+        'Se identificaron ' + prev.resumen.total + ' registros para revisión. Ingrese al portal con su cuenta corporativa, revise los casos asociados a su usuario y registre la evidencia o justificación correspondiente.\n\n' +
+        'Portal: ' + urlApp_() + '?view=portal\nReporte consolidado: ' + reporte.url,
       htmlBody: html
     };
     // Se deja margen frente al límite de adjuntos de Gmail. Si el libro supera

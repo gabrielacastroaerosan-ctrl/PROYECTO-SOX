@@ -20,6 +20,8 @@ Versión mejorada de la Web App de Google Apps Script. Conserva el procesamiento
 - Se conserva la actualización del Google Sheet maestro y la organización de archivos en Drive.
 - El botón **Cómo se calcula** explica en la app el alcance y la fórmula de cada estadística del trimestre seleccionado.
 - La vista previa segura del correo muestra período, destinatarios y cifras exactas antes de enviar; abrirla nunca envía mensajes.
+- El correo trimestral usa una plantilla corporativa con asunto de acción requerida, resumen ejecutivo, instrucciones, indicadores, detalle priorizado y accesos al portal, al reporte y al repositorio.
+- La vista previa puede abrirse en una ventana completa y el envío queda visualmente bloqueado cuando no existen destinatarios configurados.
 
 ## Instalación
 
